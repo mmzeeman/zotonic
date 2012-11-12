@@ -33,7 +33,7 @@
 	url = git://github.com/mmzeeman/esql_sqlite3.git
 [submodule "deps/pgsql"]
 	path = deps/pgsql
-	url = git@github.com:mmzeeman/pgsql.git
+	url = git@github.com/mmzeeman/pgsql.git
 [submodule "deps/esql_pgsql"]
 	path = deps/esql_pgsql
 	url = git://github.com/mmzeeman/esql_pgsql.git
