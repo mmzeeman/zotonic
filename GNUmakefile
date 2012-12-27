@@ -19,7 +19,25 @@ erl:
 $(PARSER).erl: $(PARSER).yrl
 	$(ERLC) -o src/erlydtl $(PARSER).yrl
 
+.PHONY: deps
 deps: iconv mimetypes bert.erl dh_date gen_smtp lager mochiweb ua_classifier webzmachine z_stdlib poolboy esql esqlite pgsql esql_pgsql esql_sqlite3
+.PHONY: clean_deps
+clean_deps:
+	(cd deps/iconv; ./rebar clean)
+	(cd deps/mimetypes; ./rebar clean)
+	(cd deps/bert.erl; ./rebar clean)
+	(cd deps/dh_date; ./rebar clean)
+	(cd deps/gen_smtp; ./rebar clean)
+	(cd deps/lager; ./rebar clean)
+	(cd deps/ua_classifier; ./rebar clean)
+	(cd deps/webzmachine; ./rebar clean)
+	(cd deps/z_stdlib; ./rebar clean)
+	(cd deps/poolboy; ./rebar clean)
+	(cd deps/esql; ./rebar clean)
+	(cd deps/esqlite; ./rebar clean)
+	(cd deps/pgsql; ./rebar clean)
+	(cd deps/esql_sqlite3; ./rebar clean)
+	(cd deps/esql_pgsql; ./rebar clean)
 
 iconv:
 	cd deps/iconv && ./rebar compile
@@ -41,7 +59,6 @@ webzmachine:
 	cd deps/webzmachine && ./rebar compile
 z_stdlib:
 	cd deps/z_stdlib && ./rebar compile
-
 poolboy:
 	cd deps/poolboy && ./rebar deps_dir=$(DEPS_DIR) compile
 esql:
@@ -75,10 +92,8 @@ clean_logs:
 	rm -f priv/log/*
 
 .PHONY: clean
-clean: clean_logs
+clean: clean_logs clean_deps
 	@echo "removing:"
-	(cd deps/iconv; ./rebar clean)
-	(cd deps/mimetypes; ./rebar clean)
 	@if [ "${MAKEFILES}" != "" ]; then for f in ${MAKEFILES}; do echo $$f; $(MAKE) -C `dirname $$f` clean; done; fi
 	rm -f ebin/*.beam ebin/*.app
 
