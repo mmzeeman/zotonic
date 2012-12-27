@@ -22,3 +22,21 @@
 [submodule "deps/z_stdlib"]
 	path = deps/z_stdlib
 	url = git://github.com/zotonic/z_stdlib.git
+[submodule "deps/esql"]
+	path = deps/esql
+	url = git://github.com/mmzeeman/esql.git
+[submodule "deps/poolboy"]
+	path = deps/poolboy
+	url = git://github.com/devinus/poolboy.git
+[submodule "deps/esqlite"]
+	path = deps/esqlite
+	url = git://github.com/mmzeeman/esqlite.git
+[submodule "deps/pgsql"]
+	path = deps/pgsql
+	url = git://github.com/mmzeeman/pgsql.git
+[submodule "deps/esql_pgsql"]
+	path = deps/esql_pgsql
+	url = git://github.com/mmzeeman/esql_pgsql.git
+[submodule "deps/esql_sqlite3"]
+	path = deps/esql_sqlite3
+	url = git://github.com/mmzeeman/esql_sqlite3.git

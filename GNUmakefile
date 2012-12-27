@@ -4,10 +4,12 @@ APP       := zotonic
 PARSER     =src/erlydtl/erlydtl_parser
 
 GIT_CHECK := $(shell test -d .git && git submodule update --init)
-MAKEFILES := $(shell find -L deps modules priv/sites priv/modules priv/extensions priv/sites/*/modules -maxdepth 2 -name Makefile)
+MAKEFILES := $(shell find -L modules priv/sites priv/modules priv/extensions priv/sites/*/modules -maxdepth 2 -name Makefile)
+
+DEPS_DIR := $(shell pwd)/deps
 
 .PHONY: all
-all: iconv mimetypes makefile-deps $(PARSER).erl erl ebin/$(APP).app 
+all: deps makefile-deps $(PARSER).erl erl ebin/$(APP).app 
 
 .PHONY: erl
 erl:
@@ -17,11 +19,41 @@ erl:
 $(PARSER).erl: $(PARSER).yrl
 	$(ERLC) -o src/erlydtl $(PARSER).yrl
 
+deps: iconv mimetypes bert.erl dh_date gen_smtp lager mochiweb ua_classifier webzmachine z_stdlib poolboy esql esqlite pgsql esql_pgsql esql_sqlite3
+
 iconv:
 	cd deps/iconv && ./rebar compile
-
 mimetypes:
 	cd deps/mimetypes && ./rebar compile
+bert.erl:
+	cd deps/bert.erl && ./rebar compile
+dh_date:
+	cd deps/dh_date && ./rebar compile
+gen_smtp:
+	cd deps/gen_smtp && ./rebar compile
+lager:
+	cd deps/lager && ./rebar compile
+mochiweb:
+	cd deps/mochiweb && ./rebar compile
+ua_classifier:
+	cd deps/ua_classifier && ./rebar compile
+webzmachine:
+	cd deps/webzmachine && ./rebar compile
+z_stdlib:
+	cd deps/z_stdlib && ./rebar compile
+
+poolboy:
+	cd deps/poolboy && ./rebar deps_dir=$(DEPS_DIR) compile
+esql:
+	cd deps/esql && ./rebar deps_dir=$(DEPS_DIR) compile
+esqlite:
+	cd deps/esqlite && ./rebar deps_dir=$(DEPS_DIR) compile
+pgsql:
+	cd deps/pgsql && ./rebar deps_dir=$(DEPS_DIR) compile
+esql_sqlite3:
+	cd deps/esql_sqlite3 && ./rebar deps_dir=$(DEPS_DIR) compile
+esql_pgsql:
+	cd deps/esql_pgsql && ./rebar deps_dir=$(DEPS_DIR) compile
 
 makefile-deps:
 	@if [ "${MAKEFILES}" != "" ]; then for f in ${MAKEFILES}; do echo $$f; $(MAKE) -C `dirname $$f`; done; fi
