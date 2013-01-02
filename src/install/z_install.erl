@@ -57,16 +57,16 @@ pre_install(_, _) ->
 %% @doc Install the database for the given host.
 %% @spec install(Host) -> ok
 install(Host) ->
-    {ok, C} = pgsql_pool:get_connection(Host),
+    {ok, C} = esql_pool:get_connection(Host),
     Skeleton = proplists:get_value(skeleton, z_sites_manager:get_site_config(Host)),
     
-    ok = pgsql:with_transaction(C, fun (C2) ->
+    ok = esql:with_transaction(C, fun (C2) ->
                                            install_sql_list(C, model_pgsql()),
                                            z_install_data:install(Skeleton, Host, C2),
                                            ok 
                                    end
                                ),
-    pgsql_pool:return_connection(Host, C),
+    esql_pool:return_connection(Host, C),
     
     InstallData = fun() ->
                           timer:sleep(200), %% give other processes some time to start

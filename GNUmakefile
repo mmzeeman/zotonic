@@ -3,7 +3,7 @@ ERLC      ?= $(ERL)c
 APP       := zotonic
 PARSER     =src/erlydtl/erlydtl_parser
 
-GIT_CHECK := $(shell test -d .git && git submodule update --init)
+# GIT_CHECK := $(shell test -d .git && git submodule update --init)
 MAKEFILES := $(shell find -L modules priv/sites priv/modules priv/extensions priv/sites/*/modules -maxdepth 2 -name Makefile)
 
 DEPS_DIR := $(shell pwd)/deps

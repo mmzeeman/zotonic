@@ -54,9 +54,9 @@ init(Host) ->
                 permanent, 5000, worker, dynamic},
 
     % The installer needs the database pool, depcache and translation.
-    Installer = {z_installer,
-                {z_installer, start_link, [SiteProps]},
-                permanent, 1, worker, dynamic},
+    % Installer = {z_installer,
+    %            {z_installer, start_link, [SiteProps]},
+    %            permanent, 1, worker, dynamic},
 
     % Continue with the normal per-site servers
     Session = {z_session_manager,
@@ -96,12 +96,13 @@ init(Host) ->
                     permanent, 5000, worker, dynamic},
 
     Processes = [
-            Notifier, Depcache, Translation, Installer, Session, 
+            % Notifier, Depcache, Translation, Installer, Session,
+            Notifier, Depcache, Translation, Session, 
             Dispatcher, Template, MediaClass, DropBox, Pivot,
             ModuleIndexer, Modules,
             PostStartup
     ],
-    {ok, {{one_for_all, 2, 1}, add_db_pool(Host, Processes, SiteProps)}}.
+    {ok, {{one_for_one, 2, 1}, add_db_pool(Host, Processes, SiteProps)}}.
 
 
 %% @doc Optionally add the db pool connection
@@ -125,7 +126,14 @@ add_db_pool(Host, Processes, SiteProps) ->
                            {username, DbUser}, {password, DbPassword}, 
                            {database, DbDatabase}, {schema, DbSchema} ],
 
-            [ {Host, 
-                {pgsql_pool, start_link, [Host, 10, DbOpts]},
-                permanent, 5000, worker, dynamic} ] ++ Processes
+            %% The spec for the pool
+            Spec = esql_pool:child_spec(Host, 10, [{serialized, false},
+                                                   {driver, esql_pgsql},
+                                                   {args, DbOpts}]),
+
+            %[ {Host, 
+            %    {pgsql_pool, start_link, [Host, 10, DbOpts]},
+            %    permanent, 5000, worker, dynamic} ] ++ Processes
+
+            [ Spec ] ++ Processes
     end.

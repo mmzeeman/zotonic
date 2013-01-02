@@ -180,6 +180,9 @@
 %% @doc Call the translate function, 2nd parameter is context
 -define(__(T,Context), z_trans:trans(T,Context)).
 
+%% @doc Number of milliseconds before database call timeout.
+-define(DB_TIMEOUT, 600000).
+
 %% The name of the session request parameter
 -define(SESSION_PAGE_Q, "z_pageid").
 

@@ -18,6 +18,8 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
+%% Adapted to support esql by <mmzeeman@xs4all.nl>
+
 -module(z_db).
 -author("Marc Worrell <marc@worrell.nl").
 
@@ -29,7 +31,7 @@
     transaction_clear/1,
     set/3,
     get/2,
-    get_parameter/2,
+    % get_parameter/2, -- postgres specific
     assoc_row/2,
     assoc_row/3,
     assoc_props_row/2,
@@ -55,7 +57,7 @@
     update/4,
     delete/3,
     select/3,
-    columns/2,
+%    columns/2, % - used by column names... now done by driver. 
     column_names/2,
     update_sequence/3,
     table_exists/2,
@@ -68,9 +70,8 @@
 ]).
 
 
--include_lib("pgsql.hrl").
+% -include_lib("pgsql.hrl").
 -include_lib("zotonic.hrl").
-
 
 %% @doc Perform a function inside a transaction, do a rollback on exceptions
 %% @spec transaction(Function, Context) -> FunctionResult | {error, Reason}
@@ -78,6 +79,8 @@ transaction(Function, Context) ->
     transaction(Function, [], Context).
 
 % @doc Perform a transaction with extra options. Default retry on deadlock
+
+%% TODO: check how to correctly mix this with a db layer.
 transaction(Function, Options, Context) ->
     Result = case transaction1(Function, Context) of
                 {rollback, {{error, {error, error, <<"40P01">>, _, _}}, Trace1}} ->
@@ -113,29 +116,13 @@ transaction(Function, Options, Context) ->
 
 
 % @doc Perform the transaction, return error when the transaction function crashed
-transaction1(Function, #context{dbc=undefined} = Context) ->
+transaction1(Function, #context{dbc=undefined}=Context) ->
     case has_connection(Context) of
+        %% TODO: check this... with current implementation
         true ->
-            Host     = Context#context.host,
-            {ok, C}  = pgsql_pool:get_connection(Host),
-            Context1 = Context#context{dbc=C},
-            Result = try
-                        case pgsql:squery(C, "BEGIN") of
-                            {ok, [], []} -> ok;
-                            {error, _} = ErrorBegin -> throw(ErrorBegin)
-                        end,
-                        R = Function(Context1),
-                        case pgsql:squery(C, "COMMIT") of
-                            {ok, [], []} -> ok;
-                            {error, _} = ErrorCommit -> throw(ErrorCommit)
-                        end,
-                        R
-                     catch
-                        _:Why ->
-                            pgsql:squery(C, "ROLLBACK"),
-                            {rollback, {Why, erlang:get_stacktrace()}}
-                     end,
-            pgsql_pool:return_connection(Host, C),
+            {ok, Result} = esql_pool:transaction(fun(C) -> 
+                    Function(Context#context{dbc=C})
+                end, Context#context.host),
             Result;
         false ->
             {rollback, {no_database_connection, erlang:get_stacktrace()}}
@@ -144,8 +131,6 @@ transaction1(Function, Context) ->
     % Nested transaction, only keep the outermost transaction
     Function(Context).
     
-    
-
 %% @doc Clear any transaction in the context, useful when starting a thread with this context.
 transaction_clear(#context{dbc=undefined} = Context) ->
     Context;
@@ -160,7 +145,7 @@ get(Key, Props) ->
     proplists:get_value(Key, Props).
 
 
-%% @doc Check if we have database connection
+%% @doc Check if the database pool is running.
 has_connection(#context{host=Host}) ->
     is_pid(erlang:whereis(Host)).
 
@@ -169,17 +154,19 @@ has_connection(#context{host=Host}) ->
 get_connection(#context{dbc=undefined, host=Host} = Context) ->
     case has_connection(Context) of
         true ->
-            {ok, C} = pgsql_pool:get_connection(Host),
-            C;
+            case esql_pool:get_connection(Host) of
+                C when is_pid(C) -> C;
+                _ -> throw({error, "Could not get connection."})
+            end;
         false ->
             none
     end;
-get_connection(Context) ->
+get_connection(#context{}=Context) ->
     Context#context.dbc.
 
 %% @doc Transaction handler safe function for releasing a db connection
 return_connection(C, #context{dbc=undefined, host=Host}) ->
-    pgsql_pool:return_connection(Host, C);
+    esql_pool:return_connection(C, Host);
 return_connection(_C, _Context) -> 
     ok.
 
@@ -188,14 +175,15 @@ return_connection(_C, _Context) ->
 with_connection(F, Context) ->
     with_connection(F, get_connection(Context), Context).
 
-    with_connection(F, none, _Context) -> 
-        F(none);
-    with_connection(F, Connection, Context) when is_pid(Connection) -> 
-        try
-            F(Connection)
-        after
-            return_connection(Connection, Context)
-	end.
+with_connection(F, none, _Context) -> 
+    F(none);
+with_connection(F, Connection, Context) when is_pid(Connection) -> 
+    try
+        % Apply F on the pool connection. F will get a esql connection as first param
+        esql_pool:with_connection(F, Connection)
+    after
+        return_connection(Connection, Context)
+    end.
 
 
 assoc_row(Sql, Context) ->
@@ -216,30 +204,22 @@ assoc_props_row(Sql, Parameters, Context) ->
         [] -> undefined
     end.
     
-
-get_parameter(Parameter, Context) ->
-    F = fun(C) ->
-		{ok, Result} = pgsql:get_parameter(C, z_convert:to_binary(Parameter)),
-		Result
-	end,
-    with_connection(F, Context).
-    
-
 %% @doc Return property lists of the results of a query on the database in the Context
 %% @spec assoc(SqlQuery, Context) -> Rows
 assoc(Sql, Context) ->
     assoc(Sql, [], Context).
 
 assoc(Sql, Parameters, #context{} = Context) ->
-    assoc(Sql, Parameters, Context, ?PGSQL_TIMEOUT);
+    assoc(Sql, Parameters, Context, ?DB_TIMEOUT);
 assoc(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     assoc(Sql, [], Context, Timeout).
 
 assoc(Sql, Parameters, Context, Timeout) ->
+    %% No timeout option....
     F = fun(C) when C =:= none -> [];
 	   (C) ->
-                {ok, Result} = pgsql:assoc(C, Sql, Parameters, Timeout),
-                Result
+            {ok, Result} = esql:map(fun assoc_names/2, Sql, Parameters, C),
+            Result
 	end,
     with_connection(F, Context).
 
@@ -248,35 +228,39 @@ assoc_props(Sql, Context) ->
     assoc_props(Sql, [], Context).
 
 assoc_props(Sql, Parameters, #context{} = Context) ->
-    assoc_props(Sql, Parameters, Context, ?PGSQL_TIMEOUT);
+    assoc_props(Sql, Parameters, Context, ?DB_TIMEOUT);
 assoc_props(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     assoc_props(Sql, [], Context, Timeout).
 
-assoc_props(Sql, Parameters, Context, Timeout) ->
+assoc_props(Sql, Parameters, Context, _Timeout) ->
+    % TODO: timeout
     F = fun(C) when C =:= none -> [];
 	   (C) ->
-                {ok, Result} = pgsql:assoc(C, Sql, Parameters, Timeout),
-                merge_props(Result)
+            {ok, Result} = esql:map(fun assoc_names/2, Sql, Parameters, C),
+            merge_props(Result)
 	end,
     with_connection(F, Context).
 
+assoc_names(Names, Row) ->
+    lists:zip(Names, tuple_to_list(Row)).
+
 
 q(Sql, Context) ->
-    q(Sql, [], Context, ?PGSQL_TIMEOUT).
+    q(Sql, [], Context, ?DB_TIMEOUT).
 
 q(Sql, Parameters, #context{} = Context) ->
-    q(Sql, Parameters, Context, ?PGSQL_TIMEOUT);
+    q(Sql, Parameters, Context, ?DB_TIMEOUT);
 q(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     q(Sql, [], Context, Timeout).
 
-q(Sql, Parameters, Context, Timeout) ->
+q(Sql, Parameters, Context, _Timeout) ->
+    %% TODO: mix in the Timeout. Works different with esql.
     F = fun(C) when C =:= none -> [];
 	   (C) ->
-                case pgsql:equery(C, Sql, Parameters, Timeout) of
-                    {ok, _Affected, _Cols, Rows} -> Rows;
-                    {ok, _Cols, Rows} -> Rows;
-                    {ok, Rows} -> Rows
-                end
+            ?DEBUG({q, Sql, Parameters}),
+            case ?DEBUG(esql:execute(z_convert:to_binary(Sql), Parameters, C)) of
+                {ok, _Cols, Rows} -> Rows
+            end
 	end,
     with_connection(F, Context).
 
@@ -284,15 +268,17 @@ q1(Sql, Context) ->
     q1(Sql, [], Context).
 
 q1(Sql, Parameters, #context{} = Context) ->
-    q1(Sql, Parameters, Context, ?PGSQL_TIMEOUT);
+    q1(Sql, Parameters, Context, ?DB_TIMEOUT);
 q1(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     q1(Sql, [], Context, Timeout).
 
 q1(Sql, Parameters, Context, Timeout) ->
+    %% TODO: mix in the Timeout, works differently in esql
     F = fun(C) when C =:= none -> undefined;
            (C) ->
-                case pgsql:equery1(C, Sql, Parameters, Timeout) of
-                    {ok, Value} -> Value;
+                ?DEBUG({q1, Sql, Parameters}),
+                case ?DEBUG(esql:execute1(z_convert:to_binary(Sql), Parameters, C)) of
+                    {ok, Value} -> element(1, Value);
                     {error, noresult} -> undefined
                 end
     end,
@@ -313,13 +299,18 @@ equery(Sql, Context) ->
     equery(Sql, [], Context).
     
 equery(Sql, Parameters, #context{} = Context) ->
-    equery(Sql, Parameters, Context, ?PGSQL_TIMEOUT);
+    equery(Sql, Parameters, Context, ?DB_TIMEOUT);
 equery(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     equery(Sql, [], Context, Timeout).
 
-equery(Sql, Parameters, Context, Timeout) ->
-    F = fun(C) when C =:= none -> {error, noresult};
-           (C) -> pgsql:equery(C, Sql, Parameters, Timeout)
+equery(Sql, Parameters, Context, _Timeout) ->
+    %% TODO: mix in the timeout..
+    F = fun(C) when 
+            C =:= none -> 
+                {error, noresult};
+            (C) -> 
+                ?DEBUG({equery, Sql, Parameters}),
+                ?DEBUG(esql:execute(Sql, Parameters, C))
         end,
     with_connection(F, Context).
 
@@ -331,7 +322,7 @@ insert(Table, Context) when is_atom(Table) ->
 insert(Table, Context) ->
     assert_table_name(Table),
     F = fun(C) ->
-		pgsql:equery1(C, "insert into \""++Table++"\" default values returning id")
+		esql:execute1("insert into \""++Table++"\" default values returning id;", C)
 	end,
     with_connection(F, Context).
 
@@ -369,7 +360,7 @@ insert(Table, Props, Context) ->
     end,
 
     F = fun(C) ->
-		Id = case pgsql:equery1(C, FinalSql, Parameters) of
+		Id = case esql:execute1(FinalSql, Parameters, C) of
 			 {ok, IdVal} -> IdVal;
 			 {error, noresult} -> undefined
 		     end,
@@ -390,7 +381,7 @@ update(Table, Id, Parameters, Context) ->
         UpdateProps1 = case proplists:is_defined(props, UpdateProps) of
             true ->
                 % Merge the new props with the props in the database
-                {ok, OldProps} = pgsql:equery1(C, "select props from \""++Table++"\" where id = $1", [Id]),
+                {ok, OldProps} = esql:execute1("select props from \""++Table++"\" where id = $1", [Id], C),
                 case is_list(OldProps) of
                     true ->
                         FReplace = fun ({P,_} = T, L) -> lists:keystore(P, 1, L, T) end,
@@ -409,7 +400,7 @@ update(Table, Id, Parameters, Context) ->
         Sql = "update \""++Table++"\" set " 
                  ++ string:join([ "\"" ++ atom_to_list(ColName) ++ "\" = $" ++ integer_to_list(Nr) || {ColName, Nr} <- ColNamesNr ], ", ")
                  ++ " where id = $1",
-        {ok, RowsUpdated} = pgsql:equery1(C, Sql, [Id | Params]),
+        {ok, RowsUpdated} = esql:execute1(Sql, [Id | Params], C),
         {ok, RowsUpdated}
     end,
     with_connection(F, Context).
@@ -423,7 +414,7 @@ delete(Table, Id, Context) ->
     assert_table_name(Table),
     F = fun(C) ->
         Sql = "delete from \""++Table++"\" where id = $1", 
-        {ok, RowsDeleted} = pgsql:equery1(C, Sql, [Id]),
+        {ok, RowsDeleted} = esql:execute1(Sql, [Id], C),
         {ok, RowsDeleted}
 	end,
     with_connection(F, Context).
@@ -439,7 +430,7 @@ select(Table, Id, Context) ->
     assert_table_name(Table),
     F = fun(C) ->
 		Sql = "select * from \""++Table++"\" where id = $1 limit 1", 
-		pgsql:assoc(C, Sql, [Id])
+		esql:map(fun assoc_names/2, Sql, [Id], C)
 	end,
     {ok, Row} = with_connection(F, Context),
     
@@ -506,60 +497,61 @@ split_props(Props, Cols) ->
 
 %% @doc Return a property list with all columns of the table. (example: [{id,int4,modifier},...])
 %% @spec columns(Table, Context) -> [ #column_def{} ]
-columns(Table, Context) when is_atom(Table) ->
-    columns(atom_to_list(Table), Context);
-columns(Table, Context) ->
-    {ok, Db} = pgsql_pool:get_database(?HOST(Context)),
-    {ok, Schema} = pgsql_pool:get_database_opt(schema, ?HOST(Context)),
-    case z_depcache:get({columns, Db, Schema, Table}, Context) of
-        {ok, Cols} -> 
-            Cols;
-        _ ->
-            Cols = q("  select column_name, data_type, character_maximum_length, is_nullable, column_default
-                        from information_schema.columns
-                        where table_catalog = $1
-                          and table_schema = $2
-                          and table_name = $3
-                        order by ordinal_position", [Db, Schema, Table], Context),
-            Cols1 = [ columns1(Col) || Col <- Cols ],
-            z_depcache:set({columns, Db, Schema, Table}, Cols1, ?YEAR, [{database, Db}], Context),
-            Cols1
-    end.
+% columns(Table, Context) when is_atom(Table) ->
+%     columns(atom_to_list(Table), Context);
+% columns(Table, Context) ->
+%     {ok, Db} = pgsql_pool:get_database(?HOST(Context)),
+%     {ok, Schema} = pgsql_pool:get_database_opt(schema, ?HOST(Context)),
+%     case z_depcache:get({columns, Db, Schema, Table}, Context) of
+%         {ok, Cols} -> 
+%             Cols;
+%         _ ->
+%             Cols = q("  select column_name, data_type, character_maximum_length, is_nullable, column_default
+%                         from information_schema.columns
+%                         where table_catalog = $1
+%                           and table_schema = $2
+%                           and table_name = $3
+%                         order by ordinal_position", [Db, Schema, Table], Context),
+%             Cols1 = [ columns1(Col) || Col <- Cols ],
+%             z_depcache:set({columns, Db, Schema, Table}, Cols1, ?YEAR, [{database, Db}], Context),
+%             Cols1
+%     end.
     
 
-    columns1({<<"id">>, <<"integer">>, undefined, Nullable, <<"nextval(", _/binary>>}) ->
-        #column_def{
-            name = id,
-            type = "serial",
-            length = undefined,
-            is_nullable = z_convert:to_bool(Nullable),
-            default = undefined
-        };
-    columns1({Name,Type,MaxLength,Nullable,Default}) ->
-        #column_def{
-            name = z_convert:to_atom(Name),
-            type = z_convert:to_list(Type),
-            length = MaxLength,
-            is_nullable = z_convert:to_bool(Nullable),
-            default = column_default(Default)
-        }.
+%     columns1({<<"id">>, <<"integer">>, undefined, Nullable, <<"nextval(", _/binary>>}) ->
+%         #column_def{
+%             name = id,
+%             type = "serial",
+%             length = undefined,
+%             is_nullable = z_convert:to_bool(Nullable),
+%             default = undefined
+%         };
+%     columns1({Name,Type,MaxLength,Nullable,Default}) ->
+%         #column_def{
+%             name = z_convert:to_atom(Name),
+%             type = z_convert:to_list(Type),
+%             length = MaxLength,
+%             is_nullable = z_convert:to_bool(Nullable),
+%             default = column_default(Default)
+%         }.
     
-    column_default(undefined) -> undefined;
-    column_default(<<"nextval(", _/binary>>) -> undefined;
-    column_default(Default) -> binary_to_list(Default).
+%     column_default(undefined) -> undefined;
+%     column_default(<<"nextval(", _/binary>>) -> undefined;
+%     column_default(Default) -> binary_to_list(Default).
 
 
 %% @doc Return a list with the column names of a table.  The names are sorted.
 %% @spec column_names(Table, Context) -> [ atom() ]
 column_names(Table, Context) ->
-    Names = [ C#column_def.name || C <- columns(Table, Context)],
-    lists:sort(Names).
-
+    with_connection(fun(C) -> esql:column_names(Table, C) end, Context).
 
 %% @doc Flush all cached information about the database.
 flush(Context) ->
-    {ok, Db} = pgsql_pool:get_database(?HOST(Context)),
-    z_depcache:flush({database, Db}, Context).
+    %% TODO: what to return here?
+    %% {ok, Db} = pgsql_pool:get_database(?HOST(Context)),
+    %%  z_depcache:flush({database, Db}, Context).
+    % we don't cache anything...
+    ok.
 
 
 %% @doc Update the sequence of the ids in the table. They will be renumbered according to their position in the id list.
@@ -573,7 +565,7 @@ update_sequence(Table, Ids, Context) ->
     F = fun(C) when C =:= none -> 
 		[];
 	   (C) -> 
-		[ {ok, _} = pgsql:equery1(C, "update \""++Table++"\" set seq = $2 where id = $1", Arg) || Arg <- Args ]
+		[ {ok, _} = esql:execute1("update \""++Table++"\" set seq = $2 where id = $1", Arg, C) || Arg <- Args ]
 	   end,
     with_connection(F, Context).
 
@@ -582,17 +574,18 @@ update_sequence(Table, Ids, Context) ->
 %% @doc Check the information schema if a certain table exists in the context database.
 %% @spec table_exists(TableName, Context) -> bool()
 table_exists(Table, Context) ->
-    {ok, Db} = pgsql_pool:get_database(?HOST(Context)),
-    {ok, Schema} = pgsql_pool:get_database_opt(schema, ?HOST(Context)),
-    case q1("   select count(*) 
-                from information_schema.tables 
-                where table_catalog = $1 
-                  and table_name = $2 
-                  and table_schema = $3
-                  and table_type = 'BASE TABLE'", [Db, Table, Schema], Context) of
-        1 -> true;
-        0 -> false
-    end.
+    esql_pool:table_exists(Table, ?HOST(Context)).
+    %{ok, Db} = pgsql_pool:get_database(?HOST(Context)),
+    %{ok, Schema} = pgsql_pool:get_database_opt(schema, ?HOST(Context)),
+    %case q1("   select count(*) 
+    %            from information_schema.tables 
+    %            where table_catalog = $1 
+    %              and table_name = $2 
+    %              and table_schema = $3
+    %              and table_type = 'BASE TABLE'", [Db, Table, Schema], Context) of
+    %    1 -> true;
+    %    0 -> false
+    %end.
 
 
 %% @doc Make sure that a table is dropped, only when the table exists

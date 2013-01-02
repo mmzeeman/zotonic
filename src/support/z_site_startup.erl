@@ -36,7 +36,7 @@ start_link(SiteProps) ->
 
     % Put software version in database
     % @todo Check if current version != database version and run upgrader (and downgrader?)
-    case m_site:get(dbdatabase, Context) of
+    case ?DEBUG(m_site:get(dbdatabase, Context)) of
         none -> ok;
         _ -> m_config:set_value(zotonic, version, ?ZOTONIC_VERSION, Context)
     end,
