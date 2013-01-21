@@ -179,8 +179,7 @@ with_connection(F, none, _Context) ->
     F(none);
 with_connection(F, Connection, Context) when is_pid(Connection) -> 
     try
-        % Apply F on the pool connection. F will get a esql connection as first param
-        esql_pool:with_connection(F, Connection)
+        esql_pool:with_connection(F, Connection, ?DB_TIMEOUT)
     after
         return_connection(Connection, Context)
     end.
@@ -215,13 +214,12 @@ assoc(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     assoc(Sql, [], Context, Timeout).
 
 assoc(Sql, Parameters, Context, Timeout) ->
-    %% No timeout option....
     F = fun(C) when C =:= none -> [];
 	   (C) ->
             {ok, Result} = esql:map(fun assoc_names/2, Sql, Parameters, C),
             Result
 	end,
-    with_connection(F, Context).
+    with_connection(F, Context, Timeout).
 
 
 assoc_props(Sql, Context) ->
@@ -232,14 +230,13 @@ assoc_props(Sql, Parameters, #context{} = Context) ->
 assoc_props(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     assoc_props(Sql, [], Context, Timeout).
 
-assoc_props(Sql, Parameters, Context, _Timeout) ->
-    % TODO: timeout
+assoc_props(Sql, Parameters, Context, Timeout) ->
     F = fun(C) when C =:= none -> [];
 	   (C) ->
             {ok, Result} = esql:map(fun assoc_names/2, Sql, Parameters, C),
             merge_props(Result)
 	end,
-    with_connection(F, Context).
+    with_connection(F, Context, Timeout).
 
 assoc_names(Names, Row) ->
     lists:zip(Names, tuple_to_list(Row)).
@@ -253,7 +250,7 @@ q(Sql, Parameters, #context{} = Context) ->
 q(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     q(Sql, [], Context, Timeout).
 
-q(Sql, Parameters, Context, _Timeout) ->
+q(Sql, Parameters, Context, Timeout) ->
     %% TODO: mix in the Timeout. Works different with esql.
     F = fun(C) when C =:= none -> [];
 	   (C) ->
@@ -262,7 +259,7 @@ q(Sql, Parameters, Context, _Timeout) ->
                 {ok, _Cols, Rows} -> Rows
             end
 	end,
-    with_connection(F, Context).
+    with_connection(F, Context, Timeout).
 
 q1(Sql, Context) ->
     q1(Sql, [], Context).
@@ -273,7 +270,6 @@ q1(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     q1(Sql, [], Context, Timeout).
 
 q1(Sql, Parameters, Context, Timeout) ->
-    %% TODO: mix in the Timeout, works differently in esql
     F = fun(C) when C =:= none -> undefined;
            (C) ->
                 ?DEBUG({q1, Sql, Parameters}),
@@ -282,7 +278,7 @@ q1(Sql, Parameters, Context, Timeout) ->
                     {error, noresult} -> undefined
                 end
     end,
-    with_connection(F, Context).
+    with_connection(F, Context, Timeout).
 
 
 q_row(Sql, Context) ->
@@ -303,8 +299,7 @@ equery(Sql, Parameters, #context{} = Context) ->
 equery(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     equery(Sql, [], Context, Timeout).
 
-equery(Sql, Parameters, Context, _Timeout) ->
-    %% TODO: mix in the timeout..
+equery(Sql, Parameters, Context, Timeout) ->
     F = fun(C) when 
             C =:= none -> 
                 {error, noresult};
@@ -312,7 +307,7 @@ equery(Sql, Parameters, Context, _Timeout) ->
                 ?DEBUG({equery, Sql, Parameters}),
                 ?DEBUG(esql:execute(Sql, Parameters, C))
         end,
-    with_connection(F, Context).
+    with_connection(F, Context, Timeout).
 
 
 %% @doc Insert a new row in a table, use only default values.
@@ -546,7 +541,7 @@ column_names(Table, Context) ->
     with_connection(fun(C) -> esql:column_names(Table, C) end, Context).
 
 %% @doc Flush all cached information about the database.
-flush(Context) ->
+flush(_Context) ->
     %% TODO: what to return here?
     %% {ok, Db} = pgsql_pool:get_database(?HOST(Context)),
     %%  z_depcache:flush({database, Db}, Context).
