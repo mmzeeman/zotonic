@@ -25,3 +25,6 @@
 [submodule "deps/reggy"]
 	path = deps/reggy
 	url = git://github.com/mmzeeman/reggy.git
+[submodule "deps/tubby"]
+	path = deps/tubby
+	url = git://github.com/mmzeeman/tubby.git

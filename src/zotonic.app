@@ -13,4 +13,4 @@
   {registered, []},
   {mod, {zotonic_app, []}},
   {env, []},
-  {applications, [kernel, stdlib, crypto, lager, webzmachine, mnesia]}]}.
+  {applications, [kernel, stdlib, crypto, lager, webzmachine, mnesia, reggy, tubby]}]}.
