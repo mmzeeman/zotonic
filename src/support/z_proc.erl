@@ -25,7 +25,7 @@ unregister(Name, Context) ->
 %
 % @spec where(term(), Context) -> pid() | undefined.
 whereis(Name, Context) ->
-    reggy_reg:whereis({registry(Context), Name}).
+    reggy_reg:whereis(registry(Context), Name).
 
 
 % @doc Get the registry name.
