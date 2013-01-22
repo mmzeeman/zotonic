@@ -45,12 +45,12 @@
 % @doc Connect signal to slot
 %
 connect(Signal, Slot, Context) ->
-    gen_server:call(name(Context), {'connect', Signal, Slot}).
+    gen_server:call(z_proc:whereis(?MODULE, Context), {'connect', Signal, Slot}).
 
 % @doc Disconnect signal and slot
 %
 disconnect(Signal, Slot, Context) ->
-    gen_server:call(name(Context), {'disconnect', Signal, Slot}),
+    gen_server:call(z_proc:whereis(?MODULE, Context), {'disconnect', Signal, Slot}),
     disconnect_slot(Slot).
 
 disconnect_slot(Slot) when is_pid(Slot) ->
@@ -142,7 +142,7 @@ slot_count(Context) ->
 % @doc Stop the module..
 %
 stop(Context) ->
-    gen_server:call(name(Context), stop).
+    gen_server:call(z_proc:whereis(?MODULE, Context), stop).
 
 % @doc
 %
@@ -166,7 +166,9 @@ start_link(Args) when is_list(Args) ->
     end.
 
 %% Gen server stuff.
-init(_Args) ->
+init(Args) ->
+    {context, Context} = proplists:lookup(context, Args),
+    ok = z_proc:register(?MODULE, self(), Context),
     {ok, #state{slots=[]}}.
 
 handle_call({'connect', Signal, Slot}, _From, State) ->
