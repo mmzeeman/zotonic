@@ -39,13 +39,11 @@
 }).
 
 attach_websocket(WsPid, Pid) ->
-    ?DEBUG(attach_websocket),
     gen_server:cast(Pid, {attach_websocket, WsPid}).
 
 %% 
 start_link(Name, HandlerModule, Context) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [Name, HandlerModule, Context], []),
-    {ok, Pid}.
+    {ok, _Pid} = gen_server:start_link(?MODULE, [Name, HandlerModule, Context], []).
 
 %% @doc Send a message to the bus.
 bus_message(Pid, Msg) ->
@@ -53,6 +51,9 @@ bus_message(Pid, Msg) ->
 
 bus_info(Pid, Info) ->
     gen_server:cast(Pid, {bus_info, Info}).
+
+
+%% gen-server callbacks.
 
 %% @doc Initiates the server.
 init([Name, HandlerModule, Context]) ->
@@ -66,7 +67,8 @@ handle_call(Message, _From, State) ->
     {stop, {unknown_call, Message}, State}.
 
 %% @doc Handle the next step in the module initialization.
-handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined, comet_pid=undefined}=State) ->
+handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined, 
+        comet_pid=undefined}=State) ->
     case z_utils:is_process_alive(WsPid) of
         true ->
             erlang:monitor(process, WsPid),
@@ -91,7 +93,7 @@ handle_cast(Message, State) ->
 %% @doc Handling all non call/cast messages
 
 handle_info({send_data, Data}, #state{websocket_pid=WsPid}=State) when is_pid(WsPid) ->
-    WsPid ! {send_data, Data},
+    controller_websocket:websocket_send_data(WsPid, Data),
     {noreply, State};
 handle_info({send_data, _Data}, #state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
     ?DEBUG({'TODO'}),
