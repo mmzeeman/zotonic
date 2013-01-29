@@ -48,12 +48,12 @@ forbidden(ReqData, DispatchArgs) ->
     Context1 = z_context:continue_session(Context),
     case z_context:has_session(Context1) of
     	true ->
-    		Context2 = z_session:ensure_page_session(Context1),
+    	    Context2 = z_session:ensure_page_session(Context1),
             Context3 = z_context:set(DispatchArgs, Context2),
             ensure_bus(Context3),
-    		?WM_REPLY(false, Context3);
+    	    ?WM_REPLY(false, Context3);
     	_ ->
-    		?WM_REPLY(true, Context1)
+            ?WM_REPLY(true, Context1)
     end.
 
 %% @doc Possible connection upgrades
@@ -73,7 +73,7 @@ process_post(ReqData, Context) ->
 	Context1.
 
 
-%% @doc Ensure that the stream process is started, and gets
+%% @doc Ensure that the stream process is started, and get
 %% a handler.
 ensure_bus(Context) ->
     Name = bus_name(Context),
@@ -83,7 +83,8 @@ ensure_bus(Context) ->
                 undefined ->
                     error({error, no_bus_handler});
                 Handler -> 
-                    z_pool:run(bus_pool, [Name, Handler, Context], Context)
+                    {ok, Pid} = z_pool:run(bus_pool, [Name, Handler, Context], Context),
+                    Pid
             end;
         Pid -> Pid
     end.
@@ -97,7 +98,8 @@ bus_name(Context) ->
 
 % @doc return the pid of the bus_handler.
 get_bus_handler(Context) ->
-    case z_proc:whereis(bus_name(Context), Context) of
+    BusName = bus_name(Context),
+    case z_proc:whereis(BusName, Context) of
         undefined -> error({error, no_bus_handler});
         Pid -> Pid
     end.
