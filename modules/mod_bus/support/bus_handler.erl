@@ -28,18 +28,48 @@
 
 -export([bus_message/2, bus_info/2]).
 
+-export([send_queued_messages/2]).
+
 %% interface functions
--export([attach_websocket/2]).
+-export([
+    attach_websocket/2,
+    detach_websocket/2,
+    attach_comet/2, 
+    detach_comet/2
+]).
 
 -record(state, {
     handler, 
     websocket_pid=undefined, 
-    comet_pid=undefined, 
+    comet_pid=undefined,
+    monitor_ref=undefined,
+    messages=queue:new(),
+    last_detach=undefined,
     context
 }).
 
-attach_websocket(WsPid, Pid) ->
-    gen_server:cast(Pid, {attach_websocket, WsPid}).
+
+-define(INTERVAL_MSEC, (?SESSION_PAGE_TIMEOUT div 2) * 1000).
+
+% @doc Attach the websocket process to the bus handler.
+%
+attach_websocket(WsPid, BusPid) ->
+    gen_server:cast(BusPid, {attach_websocket, WsPid}).
+
+% @doc Detach the websocket from the bus handler
+%
+detach_websocket(WsPid, BusPid) ->
+    gen_server:cast(BusPid, {detach_websocket, WsPid}).
+
+% @doc Attach the comet push process to the bus handler.
+%
+attach_comet(CometPid, BusPid) ->
+    gen_server:cast(BusPid, {attach_comet, CometPid}).
+
+% @doc Detach the comet process from the bus handler.
+%
+detach_comet(CometPid, BusPid) ->
+    gen_server:cast(BusPid, {detach_comet, CometPid}).
 
 %% 
 start_link(Name, HandlerModule, Context) ->
@@ -52,15 +82,15 @@ bus_message(Pid, Msg) ->
 bus_info(Pid, Info) ->
     gen_server:cast(Pid, {bus_info, Info}).
 
-
 %% gen-server callbacks.
 
 %% @doc Initiates the server.
 init([Name, HandlerModule, Context]) ->
     process_flag(trap_exit, true),
+    trigger_check_timeout(),
     z_proc:register(Name, self(), Context),
     {ok, Context1} = HandlerModule:bus_init(Name, Context), 
-    {ok, #state{handler=HandlerModule, context=Context1}}.
+    {ok, #state{handler=HandlerModule, context=Context1, last_detach=z_utils:now()}}.
 
 %% @doc Trap unknown calls
 handle_call(Message, _From, State) ->
@@ -71,12 +101,33 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
         comet_pid=undefined}=State) ->
     case z_utils:is_process_alive(WsPid) of
         true ->
-            erlang:monitor(process, WsPid),
-            StateWs = State#state{websocket_pid=WsPid},
-            {noreply, StateWs};
+            Ref = erlang:monitor(process, WsPid),
+            StateWs = State#state{websocket_pid=WsPid, monitor_ref=Ref},
+            StateMsg = handle_queued_messages(StateWs), 
+            {noreply, StateMsg};
         false ->
             {noreply, State}
     end;
+
+handle_cast({detach_websocket, WsPid}, #state{websocket_pid=WsPid, monitor_ref=Ref}=State) ->
+    erlang:demonitor(Ref, [flush]),
+    {noreply, State#state{websocket_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};    
+
+%% @doc Attach a comet pid. 
+handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=undefined}=State) ->
+    case z_utils:is_process_alive(CometPid) of
+        true ->
+            Ref = erlang:monitor(process, CometPid),
+            StateComet = State#state{comet_pid=CometPid, monitor_ref=Ref},
+            StateMsg = handle_queued_messages(StateComet), 
+            {noreply, StateMsg};
+        false ->
+            {noreply, State}
+    end;
+
+handle_cast({detach_comet, CometPid}, #state{comet_pid=CometPid, monitor_ref=Ref}=State) ->
+    erlang:demonitor(Ref, [flush]),
+    {noreply, State#state{comet_pid=undefined, monitor_ref=Ref, last_detach=z_utils:now()}};
     
 handle_cast({bus_message, Msg}, #state{handler=Handler, context=Context}=State) ->
     Handler:bus_message(Msg, Context),
@@ -95,17 +146,40 @@ handle_cast(Message, State) ->
 handle_info({send_data, Data}, #state{websocket_pid=WsPid}=State) when is_pid(WsPid) ->
     controller_websocket:websocket_send_data(WsPid, Data),
     {noreply, State};
-handle_info({send_data, _Data}, #state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
-    ?DEBUG({'TODO'}),
+handle_info({send_data, Data}, #state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
+    CometPid ! {send_data, Data},
     {noreply, State};
-handle_info({send_data, _Data}, #state{websocket_pid=undefined, comet_pid=undefined}=State) ->
-    ?DEBUG({'stopping, no socket attached'}),
-    {stop, {error, no_connection}, State};
+
+handle_info({send_data, Data}, #state{websocket_pid=undefined, 
+        comet_pid=undefined, messages=Msg}=State) ->
+    Msg1 = queue:in(Data, Msg),
+    {noreply, State#state{messages=Msg1}};
+
+%% @doc Do not timeout while there is a comet or websocket process attached
+handle_info(check_timeout, #state{websocket_pid=WsPid, comet_pid=CometPid}=State) when is_pid(CometPid) or is_pid(WsPid)->
+    z_utils:flush_message(check_timeout),
+    trigger_check_timeout(),
+    {noreply, State};
+
+%% @doc Give the comet process some time to come back, timeout afterwards
+handle_info(check_timeout, State) ->
+    z_utils:flush_message(check_timeout),
+    Timeout = State#state.last_detach + ?SESSION_PAGE_TIMEOUT,
+    case Timeout =< z_utils:now() of
+        true -> 
+            {stop, normal, State};
+        false ->
+            trigger_check_timeout(),
+            {noreply, State}
+    end;
+
+%%
 handle_info({'DOWN', _MonitorRef, process, WsPid, _Info}, #state{websocket_pid=WsPid}=State) ->
     {stop, normal, State#state{websocket_pid=undefined}};
 handle_info({'DOWN', _MonitorRef, process, CometPid, _Info}, #state{comet_pid=CometPid}=State) ->
     {stop, normal, State#state{comet_pid=undefined}};
 
+%%
 handle_info(Info, #state{handler=Handler, context=Context}=State) ->
     Handler:bus_info(Info, Context),
     {noreply, State}.
@@ -126,4 +200,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% support functions
 %%====================================================================
+
+%% @doc Trigger sending a check_timeout message.
+trigger_check_timeout() ->
+    erlang:send_after(?INTERVAL_MSEC, self(), check_timeout).
+
+handle_queued_messages(#state{messages=Msgs}=State) ->
+    case queue:len(Msgs) of
+        N when N =< 0 ->
+            State; 
+        _ ->
+            spawn_link(?MODULE, send_queued_messages, [self(), Msgs]),
+            State#state{messages=new:queue()}
+    end.
+            
+send_queued_messages(Pid, Msgs) ->
+    case queue:out(Msgs) of 
+        {empty, _} ->
+            done;
+        {{value, Data}, Msgs1} ->
+            Pid ! {send_data, Data},
+            send_queued_messages(Pid, Msgs1)
+    end.
 
