@@ -205,5 +205,5 @@ websocket_info(Msg, Context) ->
 
 websocket_terminate(_Reason, Context) ->
     Pid = get_bus_handler(Context),
-    bus_hander:detach_websocket(self(), Pid).
+    bus_handler:detach_websocket(self(), Pid).
 
