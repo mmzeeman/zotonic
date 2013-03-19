@@ -34,20 +34,26 @@
 -export([
     attach_websocket/2,
     detach_websocket/2,
+    attach_post/2,
+    detach_post/2,
     attach_comet/2, 
     detach_comet/2
 ]).
 
 -record(state, {
     handler, 
+    
     websocket_pid=undefined, 
     comet_pid=undefined,
+    post_pid=undefined,
+
     monitor_ref=undefined,
+    monitor_post_ref=undefined,
+    
     messages=queue:new(),
     last_detach=undefined,
     context
 }).
-
 
 -define(INTERVAL_MSEC, (?SESSION_PAGE_TIMEOUT div 2) * 1000).
 
@@ -71,6 +77,14 @@ attach_comet(CometPid, BusPid) ->
 detach_comet(CometPid, BusPid) ->
     gen_server:cast(BusPid, {detach_comet, CometPid}).
 
+% @doc Attach the message push process
+attach_post(PostPid, BusPid) ->
+    gen_server:call(BusPid, {attach_post, PostPid}).
+
+% @doc Attach the message push process
+detach_post(PostPid, BusPid) ->
+    gen_server:cast(BusPid, {detach_post, PostPid}).
+
 %% 
 start_link(Name, HandlerModule, Context) ->
     {ok, _Pid} = gen_server:start_link(?MODULE, [Name, HandlerModule, Context], []).
@@ -86,7 +100,6 @@ bus_info(Pid, Info) ->
 
 %% @doc Initiates the server.
 init([Name, HandlerModule, Context]) ->
-    ?DEBUG({new_bus_handler, ?SESSION_PAGE_TIMEOUT, ?INTERVAL_MSEC}),
     process_flag(trap_exit, true),
     trigger_check_timeout(),
     z_proc:register(Name, self(), Context),
@@ -94,13 +107,22 @@ init([Name, HandlerModule, Context]) ->
     {ok, #state{handler=HandlerModule, context=Context1, last_detach=z_utils:now()}}.
 
 %% @doc Trap unknown calls
+handle_call({attach_post, PostPid}, _From, #state{post_pid=undefined}=State) ->
+    case z_utils:is_process_alive(PostPid) of
+        true ->
+            Ref = erlang:monitor(process, PostPid),
+            {reply, connected, State#state{post_pid=PostPid, monitor_post_ref=Ref}};
+        false ->
+            {reply, not_alive, State}
+    end;
+handle_call({attach_post, _PostPid}, _From, State) ->
+    {reply, already_connected, State};
 handle_call(Message, _From, State) ->
     {stop, {unknown_call, Message}, State}.
 
 %% @doc Handle the next step in the module initialization.
 handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined, 
         comet_pid=undefined}=State) ->
-    ?DEBUG(attach_ws),
     case z_utils:is_process_alive(WsPid) of
         true ->
             Ref = erlang:monitor(process, WsPid),
@@ -112,13 +134,11 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
     end;
 
 handle_cast({detach_websocket, WsPid}, #state{websocket_pid=WsPid, monitor_ref=Ref}=State) ->
-    ?DEBUG(detach_ws),
     erlang:demonitor(Ref, [flush]),
     {noreply, State#state{websocket_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};    
 
 %% @doc Attach a comet pid. 
 handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=undefined}=State) ->
-    ?DEBUG(attach_comet),
     case z_utils:is_process_alive(CometPid) of
         true ->
             Ref = erlang:monitor(process, CometPid),
@@ -130,9 +150,18 @@ handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=
     end;
 
 handle_cast({detach_comet, CometPid}, #state{comet_pid=CometPid, monitor_ref=Ref}=State) ->
-    ?DEBUG(detach_comet),
     erlang:demonitor(Ref, [flush]),
-    {noreply, State#state{comet_pid=undefined, monitor_ref=Ref, last_detach=z_utils:now()}};
+    {noreply, State#state{comet_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};
+
+%% @doc Attach a post pid. It will get prio over everything else.
+%%
+handle_cast({detach_post, PostPid}, #state{post_pid=PostPid, monitor_post_ref=Ref}=State) ->
+    erlang:demonitor(Ref, [flush]),
+    {noreply, State#state{post_pid=undefined, monitor_post_ref=Ref, last_detach=z_utils:now()}};
+
+%%
+%%
+%%
     
 handle_cast({bus_message, Msg}, #state{handler=Handler, context=Context}=State) ->
     Handler:bus_message(Msg, Context),
@@ -150,6 +179,10 @@ handle_cast(Message, State) ->
 
 % @doc Send data to websocket
 %
+handle_info({send_data, Data}, #state{post_pid=PostPid}=State) when is_pid(PostPid) ->
+    PostPid ! {send_data, Data},
+    {noreply, State};
+
 handle_info({send_data, Data}, #state{websocket_pid=WsPid}=State) when is_pid(WsPid) ->
     controller_websocket:websocket_send_data(WsPid, Data),
     {noreply, State};
@@ -169,19 +202,16 @@ handle_info({send_data, Data}, #state{websocket_pid=undefined,
 
 %% @doc Do not timeout while there is a comet or websocket process attached
 handle_info(check_timeout, #state{websocket_pid=WsPid, comet_pid=CometPid}=State) when is_pid(CometPid) or is_pid(WsPid)->
-    ?DEBUG(timeout_check_attached),
     z_utils:flush_message(check_timeout),
     trigger_check_timeout(),
     {noreply, State};
 
 %% @doc Give the comet process some time to come back, timeout afterwards
 handle_info(check_timeout, State) ->
-    ?DEBUG(timeout_check_nothing_attached),
     z_utils:flush_message(check_timeout),
     Timeout = State#state.last_detach + ?SESSION_PAGE_TIMEOUT,
     case Timeout =< z_utils:now() of
         true -> 
-            ?DEBUG(stop_bus_handler),
             {stop, normal, State};
         false ->
             trigger_check_timeout(),
@@ -189,12 +219,12 @@ handle_info(check_timeout, State) ->
     end;
 
 %%
+handle_info({'DOWN', _MonitorRef, process, PostPid, _Info}, #state{post_pid=PostPid}=State) ->
+    {stop, normal, State#state{post_pid=undefined, monitor_post_ref=undefined}};
 handle_info({'DOWN', _MonitorRef, process, WsPid, _Info}, #state{websocket_pid=WsPid}=State) ->
-    ?DEBUG(ws_died),
-    {stop, normal, State#state{websocket_pid=undefined}};
+    {stop, normal, State#state{websocket_pid=undefined, monitor_ref=undefined}};
 handle_info({'DOWN', _MonitorRef, process, CometPid, _Info}, #state{comet_pid=CometPid}=State) ->
-    ?DEBUG(comet_died),
-    {stop, normal, State#state{comet_pid=undefined}};
+    {stop, normal, State#state{comet_pid=undefined, monitor_ref=undefined}};
 
 %%
 handle_info(Info, #state{handler=Handler, context=Context}=State) ->
@@ -220,7 +250,6 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Trigger sending a check_timeout message.
 trigger_check_timeout() ->
-    ?DEBUG({trigger, ?INTERVAL_MSEC}),
     erlang:send_after(?INTERVAL_MSEC, self(), check_timeout).
 
 handle_queued_messages(#state{messages=Msgs}=State) ->

@@ -118,27 +118,46 @@ process_send(Context) ->
             ?WM_REPLY(true, Context1);
         {Msg, Rd} ->
             %% Yes, we have a message, send it to the bus handler.
-            Pid = get_bus_handler(Context),
-            bus_handler:bus_message(Pid, Msg),
-            Context1 = z_context:set_reqdata(Rd, Context),
-            ?WM_REPLY(true, Context1)
+            BusPid = get_bus_handler(Context),
+            bus_handler:bus_message(BusPid, Msg),
+
+            %% Attach ourself to the bus_handler... for 100 ms. This keeps the
+            %% poll process intact.
+            case bus_handler:attach_post(self(), BusPid) of
+                connected ->
+                    receive
+                        {send_data, Data} ->
+                            bus_handler:detach_post(self(), BusPid),
+                            RD = z_context:get_reqdata(Context),
+                            RD1 = wrq:append_to_response_body(Data, RD),
+                            Context1 = z_context:set_reqdata(RD1, Context),
+                            ?WM_REPLY(true, Context1)
+                    after 
+                        100 ->
+                            bus_handler:detach_post(self(), BusPid),
+                            Context1 = z_context:set_reqdata(Rd, Context),
+                            ?WM_REPLY(true, Context1)
+                    end;
+                _ ->
+                    Context1 = z_context:set_reqdata(Rd, Context),
+                    ?WM_REPLY(true, Context1)
+            end
     end.
 
 %% @doc Wait for all scripts to be pushed to the user agent.
 %%
 process_push_loop(BusPid, Context) ->
-    FlushTimerRef = erlang:send_after(?COMET_FLUSH_EMPTY, self(), flush),
     receive
-        flush ->
-            bus_handler:detach_comet(self(), BusPid),
-            ?WM_REPLY(true, Context);
         {send_data, Data} ->
-            erlang:cancel_timer(FlushTimerRef),
             bus_handler:detach_comet(self(), BusPid),            
             RD = z_context:get_reqdata(Context),
             RD1 = wrq:append_to_response_body(Data, RD),
             Context1 = z_context:set_reqdata(RD1, Context),
-            ?WM_REPLY(true, Context1);
+            ?WM_REPLY(true, Context1)
+        after 
+            ?COMET_FLUSH_EMPTY ->
+                bus_handler:detach_comet(self(), BusPid),
+                ?WM_REPLY(true, Context)
     end.
 
 %%
