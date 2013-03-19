@@ -75,7 +75,6 @@ process_post_loop(Context, TRef, HasData) ->
             timer:cancel(TRef),
             z_session_page:comet_detach(Context#context.page_pid),
             ?WM_REPLY(true, Context);
-
         script_queued ->
             Scripts = z_session_page:get_scripts(Context#context.page_pid),
             RD  = z_context:get_reqdata(Context),

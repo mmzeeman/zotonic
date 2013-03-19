@@ -99,10 +99,12 @@ code_change(_OldVsn, State, _Extra) ->
 
 % @doc Start the bus pool.
 start_pool(Context) ->
+    ?DEBUG(start_bus_pool),
     z_pool:start(bus_pool, {bus_handler, start_link, []}, 1000, Context).
     
 % @doc Stop the bus pool and all the bus handlers in it.
 stop_pool(Context) ->
+    ?DEBUG(stop_bus_pool),
     z_pool:stop(bus_pool, Context),
     ok.
     

@@ -38,15 +38,15 @@
 -include_lib("controller_webmachine_helper.hrl").
 -include_lib("zotonic.hrl").
 
+-define(COMET_FLUSH_EMPTY, 55000).
+
 init(DispatchArgs) ->
-    ?DEBUG(init),
 	{ok, DispatchArgs}.
 
 %% @doc The request must have a valid session cookie.
 %%
 %% TODO: add comet transport.
 forbidden(ReqData, DispatchArgs) ->
-    ?DEBUG(checkingsession),
 	Context = z_context:new(ReqData),
     Context1 = z_context:continue_session(Context),
     case z_context:has_session(Context1) of
@@ -61,7 +61,6 @@ forbidden(ReqData, DispatchArgs) ->
 
 %% @doc Possible connection upgrades
 upgrades_provided(ReqData, Context) ->
-    ?DEBUG(upgrade),
     {[{"WebSocket", websocket_start}], ReqData, Context}.
 
 %%
@@ -71,7 +70,6 @@ allowed_methods(ReqData, Context) ->
 content_types_provided(ReqData, Context) ->
     %% When handling a POST the content type function is not used, so
     %% supply false for the function.
-    ?DEBUG(content_types),
     {[{"application/x-javascript", false},
       {"text/html", to_html}], ReqData, Context }.
 
@@ -91,14 +89,15 @@ to_html(ReqData, Context) ->
 %%
 process_post(ReqData, Context) ->
     %% Process post
-    ?DEBUG(process_post),
     Context1 = ?WM_REQ(ReqData, Context),
     Context2 = z_context:set_reqdata(ReqData, Context1),
     case wrq:get_qs_value("m", ReqData) of
         undefined -> 
             process_send(Context2);
         _ ->
-            process_push_loop(Context2)
+            BusPid = get_bus_handler(Context),
+            bus_handler:attach_comet(self(), BusPid),
+            process_push_loop(BusPid, Context2)
     end.
 
 %%
@@ -106,6 +105,9 @@ process_post(ReqData, Context) ->
 %% 
 
 %% @doc Receive a message from the client and send it to the bus handler.
+%% 
+%% TODO: Temporarily attach this process as comet handler, 
+%% then we can get a quick response back via this socket and leave 
 %%
 process_send(Context) ->
     ReqData = z_context:get_reqdata(Context),
@@ -124,21 +126,19 @@ process_send(Context) ->
 
 %% @doc Wait for all scripts to be pushed to the user agent.
 %%
-process_push_loop(Context) ->
-    BusPid = get_bus_handler(Context),
-    bus_handler:comet_attach(self(), BusPid),
-
+process_push_loop(BusPid, Context) ->
+    FlushTimerRef = erlang:send_after(?COMET_FLUSH_EMPTY, self(), flush),
     receive
-        {push_data, Data} ->
-            ?DEBUG({'we-have-data-push-to-client', Data}),
-            bus_handler:comet_detach(self(), BusPid),
+        flush ->
+            bus_handler:detach_comet(self(), BusPid),
+            ?WM_REPLY(true, Context);
+        {send_data, Data} ->
+            erlang:cancel_timer(FlushTimerRef),
+            bus_handler:detach_comet(self(), BusPid),            
             RD = z_context:get_reqdata(Context),
             RD1 = wrq:append_to_response_body(Data, RD),
             Context1 = z_context:set_reqdata(RD1, Context),
             ?WM_REPLY(true, Context1);
-        Msg ->
-            ?DEBUG({unknown_message, Msg}),
-            process_push_loop(Context)
     end.
 
 %%
@@ -155,6 +155,7 @@ ensure_bus(Context) ->
                 undefined ->
                     error({error, no_bus_handler});
                 Handler ->
+                    ?DEBUG(starting),
                     {ok, Pid} = z_pool:run(bus_pool,
                         [Name, Handler, Context], Context),
                     Pid

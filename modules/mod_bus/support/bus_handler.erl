@@ -86,6 +86,7 @@ bus_info(Pid, Info) ->
 
 %% @doc Initiates the server.
 init([Name, HandlerModule, Context]) ->
+    ?DEBUG({new_bus_handler, ?SESSION_PAGE_TIMEOUT, ?INTERVAL_MSEC}),
     process_flag(trap_exit, true),
     trigger_check_timeout(),
     z_proc:register(Name, self(), Context),
@@ -99,6 +100,7 @@ handle_call(Message, _From, State) ->
 %% @doc Handle the next step in the module initialization.
 handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined, 
         comet_pid=undefined}=State) ->
+    ?DEBUG(attach_ws),
     case z_utils:is_process_alive(WsPid) of
         true ->
             Ref = erlang:monitor(process, WsPid),
@@ -110,11 +112,13 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
     end;
 
 handle_cast({detach_websocket, WsPid}, #state{websocket_pid=WsPid, monitor_ref=Ref}=State) ->
+    ?DEBUG(detach_ws),
     erlang:demonitor(Ref, [flush]),
     {noreply, State#state{websocket_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};    
 
 %% @doc Attach a comet pid. 
 handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=undefined}=State) ->
+    ?DEBUG(attach_comet),
     case z_utils:is_process_alive(CometPid) of
         true ->
             Ref = erlang:monitor(process, CometPid),
@@ -126,6 +130,7 @@ handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=
     end;
 
 handle_cast({detach_comet, CometPid}, #state{comet_pid=CometPid, monitor_ref=Ref}=State) ->
+    ?DEBUG(detach_comet),
     erlang:demonitor(Ref, [flush]),
     {noreply, State#state{comet_pid=undefined, monitor_ref=Ref, last_detach=z_utils:now()}};
     
@@ -143,13 +148,20 @@ handle_cast(Message, State) ->
 
 %% @doc Handling all non call/cast messages
 
+% @doc Send data to websocket
+%
 handle_info({send_data, Data}, #state{websocket_pid=WsPid}=State) when is_pid(WsPid) ->
     controller_websocket:websocket_send_data(WsPid, Data),
     {noreply, State};
+
+% @doc Send data to comet
+%
 handle_info({send_data, Data}, #state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
     CometPid ! {send_data, Data},
     {noreply, State};
 
+% @doc No comet or websocket attached yet. Queue the data.
+%
 handle_info({send_data, Data}, #state{websocket_pid=undefined, 
         comet_pid=undefined, messages=Msg}=State) ->
     Msg1 = queue:in(Data, Msg),
@@ -157,16 +169,19 @@ handle_info({send_data, Data}, #state{websocket_pid=undefined,
 
 %% @doc Do not timeout while there is a comet or websocket process attached
 handle_info(check_timeout, #state{websocket_pid=WsPid, comet_pid=CometPid}=State) when is_pid(CometPid) or is_pid(WsPid)->
+    ?DEBUG(timeout_check_attached),
     z_utils:flush_message(check_timeout),
     trigger_check_timeout(),
     {noreply, State};
 
 %% @doc Give the comet process some time to come back, timeout afterwards
 handle_info(check_timeout, State) ->
+    ?DEBUG(timeout_check_nothing_attached),
     z_utils:flush_message(check_timeout),
     Timeout = State#state.last_detach + ?SESSION_PAGE_TIMEOUT,
     case Timeout =< z_utils:now() of
         true -> 
+            ?DEBUG(stop_bus_handler),
             {stop, normal, State};
         false ->
             trigger_check_timeout(),
@@ -175,8 +190,10 @@ handle_info(check_timeout, State) ->
 
 %%
 handle_info({'DOWN', _MonitorRef, process, WsPid, _Info}, #state{websocket_pid=WsPid}=State) ->
+    ?DEBUG(ws_died),
     {stop, normal, State#state{websocket_pid=undefined}};
 handle_info({'DOWN', _MonitorRef, process, CometPid, _Info}, #state{comet_pid=CometPid}=State) ->
+    ?DEBUG(comet_died),
     {stop, normal, State#state{comet_pid=undefined}};
 
 %%
@@ -203,6 +220,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Trigger sending a check_timeout message.
 trigger_check_timeout() ->
+    ?DEBUG({trigger, ?INTERVAL_MSEC}),
     erlang:send_after(?INTERVAL_MSEC, self(), check_timeout).
 
 handle_queued_messages(#state{messages=Msgs}=State) ->
