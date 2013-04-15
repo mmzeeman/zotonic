@@ -132,6 +132,9 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
         false ->
             {noreply, State}
     end;
+handle_cast({attach_websocket, WsPid}, State) ->
+    ?DEBUG({attach_websocket, WsPid, already_attached, State}),
+    {noreply, State};
 
 handle_cast({detach_websocket, WsPid}, #state{websocket_pid=WsPid, monitor_ref=Ref}=State) ->
     erlang:demonitor(Ref, [flush]),
