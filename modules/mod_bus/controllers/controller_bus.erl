@@ -39,6 +39,7 @@
 -include_lib("zotonic.hrl").
 
 -define(COMET_FLUSH_EMPTY, 55000).
+-define(COMET_PIGGY_FLUSH, 50).
 
 init(DispatchArgs) ->
 	{ok, DispatchArgs}.
@@ -96,8 +97,7 @@ process_post(ReqData, Context) ->
             process_send(Context2);
         _ ->
             BusPid = get_bus_handler(Context),
-            bus_handler:attach_comet(self(), BusPid),
-            process_push_loop(BusPid, Context2)
+            process_push(BusPid, Context2)
     end.
 
 %%
@@ -121,19 +121,21 @@ process_send(Context) ->
             BusPid = get_bus_handler(Context),
             bus_handler:bus_message(BusPid, Msg),
 
-            %% Attach ourself to the bus_handler... for 100 ms. This keeps the
-            %% poll process intact.
+            %% poll process intact
+            % ?DEBUG(attach_post),
             case bus_handler:attach_post(self(), BusPid) of
                 connected ->
                     receive
                         {send_data, Data} ->
+                            ?DEBUG({piggy_back, Data}),
                             bus_handler:detach_post(self(), BusPid),
                             RD = z_context:get_reqdata(Context),
                             RD1 = wrq:append_to_response_body(Data, RD),
                             Context1 = z_context:set_reqdata(RD1, Context),
                             ?WM_REPLY(true, Context1)
                     after 
-                        100 ->
+                        ?COMET_PIGGY_FLUSH ->
+                            ?DEBUG(no_data_to_piggy_back),
                             bus_handler:detach_post(self(), BusPid),
                             Context1 = z_context:set_reqdata(Rd, Context),
                             ?WM_REPLY(true, Context1)
@@ -146,19 +148,23 @@ process_send(Context) ->
 
 %% @doc Wait for all scripts to be pushed to the user agent.
 %%
-process_push_loop(BusPid, Context) ->
-    receive
+process_push(BusPid, Context) ->
+    Ref = erlang:make_ref(),
+    ?DEBUG({push, Ref}),
+    bus_handler:attach_comet(self(), BusPid),
+    Context1 = receive
         {send_data, Data} ->
-            bus_handler:detach_comet(self(), BusPid),            
             RD = z_context:get_reqdata(Context),
             RD1 = wrq:append_to_response_body(Data, RD),
-            Context1 = z_context:set_reqdata(RD1, Context),
-            ?WM_REPLY(true, Context1)
+            z_context:set_reqdata(RD1, Context)
         after 
             ?COMET_FLUSH_EMPTY ->
-                bus_handler:detach_comet(self(), BusPid),
-                ?WM_REPLY(true, Context)
-    end.
+                Context
+    end,
+    bus_handler:detach_comet(self(), BusPid),
+    ?DEBUG({push_done, Ref}),
+    ?WM_REPLY(true, Context1).
+
 
 %%
 %% Bus.
@@ -174,7 +180,6 @@ ensure_bus(Context) ->
                 undefined ->
                     error({error, no_bus_handler});
                 Handler ->
-                    ?DEBUG(starting),
                     {ok, Pid} = z_pool:run(bus_pool,
                         [Name, Handler, Context], Context),
                     Pid
@@ -203,6 +208,7 @@ get_bus_handler(Context) ->
 
 %% @doc Initiate the websocket connection upgrade
 websocket_start(ReqData, Context) ->
+    ?DEBUG(websocket_start),
     Context1 = z_context:set(ws_handler, ?MODULE, Context),
     controller_websocket:websocket_start(ReqData, Context1).
 

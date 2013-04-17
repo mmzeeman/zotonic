@@ -70,11 +70,13 @@ detach_websocket(WsPid, BusPid) ->
 % @doc Attach the comet push process to the bus handler.
 %
 attach_comet(CometPid, BusPid) ->
+    ?DEBUG({attach_comet, CometPid, BusPid}),
     gen_server:cast(BusPid, {attach_comet, CometPid}).
 
 % @doc Detach the comet process from the bus handler.
 %
 detach_comet(CometPid, BusPid) ->
+    ?DEBUG({detach_comet, CometPid, BusPid}),
     gen_server:cast(BusPid, {detach_comet, CometPid}).
 
 % @doc Attach the message push process
@@ -125,6 +127,7 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
         comet_pid=undefined}=State) ->
     case z_utils:is_process_alive(WsPid) of
         true ->
+            ?DEBUG(attach_websocket),
             Ref = erlang:monitor(process, WsPid),
             StateWs = State#state{websocket_pid=WsPid, monitor_ref=Ref},
             StateMsg = handle_queued_messages(StateWs), 
@@ -152,9 +155,16 @@ handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=
             {noreply, State}
     end;
 
+handle_cast({attach_comet, CometPid}, #state{comet_pid=CPid, websocket_pid=WPid}=State) ->
+    ?DEBUG({wrong_attach, CometPid, CPid, WPid}),
+    {noreply, State};    
+
 handle_cast({detach_comet, CometPid}, #state{comet_pid=CometPid, monitor_ref=Ref}=State) ->
     erlang:demonitor(Ref, [flush]),
     {noreply, State#state{comet_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};
+handle_cast({detach_comet, _CometPid}, State) ->
+    %% ignore
+    {noreply, State};
 
 %% @doc Attach a post pid. It will get prio over everything else.
 %%
@@ -193,6 +203,7 @@ handle_info({send_data, Data}, #state{websocket_pid=WsPid}=State) when is_pid(Ws
 % @doc Send data to comet
 %
 handle_info({send_data, Data}, #state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
+    ?DEBUG({send_comet_data, Data}),
     CometPid ! {send_data, Data},
     {noreply, State};
 
@@ -261,7 +272,7 @@ handle_queued_messages(#state{messages=Msgs}=State) ->
             State; 
         _ ->
             spawn_link(?MODULE, send_queued_messages, [self(), Msgs]),
-            State#state{messages=new:queue()}
+            State#state{messages=queue:new()}
     end.
             
 send_queued_messages(Pid, Msgs) ->
@@ -269,6 +280,7 @@ send_queued_messages(Pid, Msgs) ->
         {empty, _} ->
             done;
         {{value, Data}, Msgs1} ->
+            ?DEBUG({send_queued, Data}),
             Pid ! {send_data, Data},
             send_queued_messages(Pid, Msgs1)
     end.

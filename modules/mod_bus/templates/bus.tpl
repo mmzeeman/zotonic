@@ -12,11 +12,8 @@
 	{% include "_js_include_jquery.tpl" %}
 
   <script type="text/javascript">
-    console.log('bezig met bus script');
-
     function z_bus_host() {
     	var url = window.location.pathname + '?m=p'; 
-    	console.log("poll", url);
     	$.ajax({ 
 			url: url, 
 			type: 'post',
@@ -29,17 +26,11 @@
 			console.log(textStatus);
 			setTimeout(function() { z_bus_host(); }, 1000);
 		});
-
 	}
 	z_bus_host();
 
 	function z_bus_data(data) {
-		console.log("do we have this?", window.bus_message);
-		console.log("z_bus_data", data);
-		if('bus_message' in window) {
-			console.log('got a bus_message function');
-			window.bus_message(data);
-		}
+		if('bus_message' in window) window.bus_message(data);
 	}
 	</script>
   </body>
