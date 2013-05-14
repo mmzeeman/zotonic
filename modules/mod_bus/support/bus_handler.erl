@@ -28,7 +28,7 @@
 
 -export([bus_message/2, bus_info/2]).
 
--export([send_queued_messages/2]).
+-export([send_queued_ws_messages/2]).
 
 %% interface functions
 -export([
@@ -70,13 +70,11 @@ detach_websocket(WsPid, BusPid) ->
 % @doc Attach the comet push process to the bus handler.
 %
 attach_comet(CometPid, BusPid) ->
-    ?DEBUG({attach_comet, CometPid, BusPid}),
     gen_server:cast(BusPid, {attach_comet, CometPid}).
 
 % @doc Detach the comet process from the bus handler.
 %
 detach_comet(CometPid, BusPid) ->
-    ?DEBUG({detach_comet, CometPid, BusPid}),
     gen_server:cast(BusPid, {detach_comet, CometPid}).
 
 % @doc Attach the message push process
@@ -130,7 +128,7 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
             ?DEBUG(attach_websocket),
             Ref = erlang:monitor(process, WsPid),
             StateWs = State#state{websocket_pid=WsPid, monitor_ref=Ref},
-            StateMsg = handle_queued_messages(StateWs), 
+            StateMsg = handle_queued_ws_messages(StateWs), 
             {noreply, StateMsg};
         false ->
             {noreply, State}
@@ -149,7 +147,7 @@ handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=
         true ->
             Ref = erlang:monitor(process, CometPid),
             StateComet = State#state{comet_pid=CometPid, monitor_ref=Ref},
-            StateMsg = handle_queued_messages(StateComet), 
+            StateMsg = handle_queued_comet_messages(StateComet), 
             {noreply, StateMsg};
         false ->
             {noreply, State}
@@ -203,7 +201,6 @@ handle_info({send_data, Data}, #state{websocket_pid=WsPid}=State) when is_pid(Ws
 % @doc Send data to comet
 %
 handle_info({send_data, Data}, #state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
-    ?DEBUG({send_comet_data, Data}),
     CometPid ! {send_data, Data},
     {noreply, State};
 
@@ -266,22 +263,35 @@ code_change(_OldVsn, State, _Extra) ->
 trigger_check_timeout() ->
     erlang:send_after(?INTERVAL_MSEC, self(), check_timeout).
 
-handle_queued_messages(#state{messages=Msgs}=State) ->
+
+%% -- 
+
+handle_queued_ws_messages(#state{messages=Msgs}=State) ->
     case queue:len(Msgs) of
         N when N =< 0 ->
             State; 
         _ ->
-            spawn_link(?MODULE, send_queued_messages, [self(), Msgs]),
+            spawn_link(?MODULE, send_queued_ws_messages, [self(), Msgs]),
             State#state{messages=queue:new()}
     end.
             
-send_queued_messages(Pid, Msgs) ->
+send_queued_ws_messages(Pid, Msgs) ->
     case queue:out(Msgs) of 
         {empty, _} ->
             done;
         {{value, Data}, Msgs1} ->
-            ?DEBUG({send_queued, Data}),
+            ?DEBUG({send_queued, queue:to_list(Msgs)}),
             Pid ! {send_data, Data},
-            send_queued_messages(Pid, Msgs1)
+            send_queued_ws_messages(Pid, Msgs1)
     end.
 
+%% --
+
+handle_queued_comet_messages(#state{comet_pid=CometPid, messages=Msgs}=State) ->
+    case queue:to_list(Msgs) of
+        [] ->
+            State;
+        Messages ->  
+            CometPid ! {send_queued_data, queue:to_list(Msgs)},
+            State#state{messages=queue:new()}
+    end.

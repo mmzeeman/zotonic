@@ -127,7 +127,6 @@ process_send(Context) ->
                 connected ->
                     receive
                         {send_data, Data} ->
-                            ?DEBUG({piggy_back, Data}),
                             bus_handler:detach_post(self(), BusPid),
                             RD = z_context:get_reqdata(Context),
                             RD1 = wrq:append_to_response_body(Data, RD),
@@ -135,7 +134,6 @@ process_send(Context) ->
                             ?WM_REPLY(true, Context1)
                     after 
                         ?COMET_PIGGY_FLUSH ->
-                            ?DEBUG(no_data_to_piggy_back),
                             bus_handler:detach_post(self(), BusPid),
                             Context1 = z_context:set_reqdata(Rd, Context),
                             ?WM_REPLY(true, Context1)
@@ -149,10 +147,12 @@ process_send(Context) ->
 %% @doc Wait for all scripts to be pushed to the user agent.
 %%
 process_push(BusPid, Context) ->
-    Ref = erlang:make_ref(),
-    ?DEBUG({push, Ref}),
     bus_handler:attach_comet(self(), BusPid),
     Context1 = receive
+        {send_queued_data, Messages} ->
+            RD = z_context:get_reqdata(Context),
+            RD1 = wrq:append_to_response_body(Messages, RD),
+            z_context:set_reqdata(RD1, Context);           
         {send_data, Data} ->
             RD = z_context:get_reqdata(Context),
             RD1 = wrq:append_to_response_body(Data, RD),
@@ -162,7 +162,6 @@ process_push(BusPid, Context) ->
                 Context
     end,
     bus_handler:detach_comet(self(), BusPid),
-    ?DEBUG({push_done, Ref}),
     ?WM_REPLY(true, Context1).
 
 
@@ -208,7 +207,6 @@ get_bus_handler(Context) ->
 
 %% @doc Initiate the websocket connection upgrade
 websocket_start(ReqData, Context) ->
-    ?DEBUG(websocket_start),
     Context1 = z_context:set(ws_handler, ?MODULE, Context),
     controller_websocket:websocket_start(ReqData, Context1).
 

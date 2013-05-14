@@ -21,16 +21,16 @@
 			dataType: 'text',
 		}).done(function(data, textStatus) {
 			z_bus_data(data);
-			setTimeout(function() { z_bus_host(); }, 1000);
+			setTimeout(function() { z_bus_host(); }, 200);
 		}).fail(function(xmlHttpRequest, textStatus, errorThrown) {
-			console.log(textStatus);
 			setTimeout(function() { z_bus_host(); }, 1000);
 		});
 	}
 	z_bus_host();
 
 	function z_bus_data(data) {
-		if('bus_message' in window) window.bus_message(data);
+		if('bus_message' in window) 
+			window.bus_message(data);
 	}
 	</script>
   </body>
