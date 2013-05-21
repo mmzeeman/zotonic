@@ -152,11 +152,28 @@ handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=
         false ->
             {noreply, State}
     end;
-
-handle_cast({attach_comet, CometPid}, #state{comet_pid=CPid, websocket_pid=WPid}=State) ->
-    ?DEBUG({wrong_attach, CometPid, CPid, WPid}),
-    {noreply, State};    
-
+handle_cast({attach_comet, CometPid}, #state{comet_pid=_CPid, websocket_pid=undefined, monitor_ref=Ref}=State) ->
+    case z_utils:is_process_alive(CometPid) of
+        true ->
+            erlang:demonitor(Ref, [flush]),
+            NewRef = erlang:monitor(process, CometPid),
+            StateComet = State#state{comet_pid=CometPid, monitor_ref=NewRef},
+            StateMsg = handle_queued_comet_messages(StateComet), 
+            {noreply, StateMsg};
+        false ->
+            {noreply, State}
+    end;
+handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=_WPid, monitor_ref=Ref}=State) ->
+    case z_utils:is_process_alive(CometPid) of
+        true ->
+            erlang:demonitor(Ref, [flush]),
+            NewRef = erlang:monitor(process, CometPid),
+            StateComet = State#state{comet_pid=CometPid, websocket_pid=undefined, monitor_ref=NewRef},
+            StateMsg = handle_queued_comet_messages(StateComet), 
+            {noreply, StateMsg};
+        false ->
+            {noreply, State}
+    end;
 handle_cast({detach_comet, CometPid}, #state{comet_pid=CometPid, monitor_ref=Ref}=State) ->
     erlang:demonitor(Ref, [flush]),
     {noreply, State#state{comet_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};
@@ -292,6 +309,6 @@ handle_queued_comet_messages(#state{comet_pid=CometPid, messages=Msgs}=State) ->
         [] ->
             State;
         Messages ->  
-            CometPid ! {send_queued_data, queue:to_list(Msgs)},
+            CometPid ! {send_queued_data, Messages},
             State#state{messages=queue:new()}
     end.
