@@ -69,10 +69,7 @@ allowed_methods(ReqData, Context) ->
     {['GET', 'POST'], ReqData, Context}.
 
 content_types_provided(ReqData, Context) ->
-    %% When handling a POST the content type function is not used, so
-    %% supply false for the function.
-    {[{"application/x-javascript", false},
-      {"text/html", to_html}], ReqData, Context }.
+    {[{"text/html", to_html}], ReqData, Context}.
 
 %% @doc Handle a get request, this is the subframe.
 %%
@@ -81,7 +78,7 @@ to_html(ReqData, Context) ->
     Context2 = z_context:ensure_all(Context1),
     Context3 = z_context:set_noindex_header(Context2),
     Template = z_context:get(template, Context3, "bus.tpl"),
-    Rendered = z_template:render(Template, z_context:get_all(Context), Context3),
+    Rendered = z_template:render(Template, z_context:get_all(Context3), Context3),
     {Output, OutputContext} = z_context:output(Rendered, Context3),
     ?WM_REPLY(Output, OutputContext).
 
