@@ -16,9 +16,9 @@
     	var url = window.location.pathname + '?m=p'; 
     	$.ajax({ 
 			url: url, 
-			type: 'post',
+			type: "post",
 			data: "z_pageid={{ q.z_pageid|urlencode }}", 
-			dataType: 'text',
+			dataType: "text"
 		}).done(function(data, textStatus) {
 			z_bus_data(data);
 			setTimeout(function() { z_bus_host(); }, 200);
