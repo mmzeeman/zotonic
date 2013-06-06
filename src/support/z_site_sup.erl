@@ -48,6 +48,10 @@ init(Host) ->
     % On (re)start we use the newest site config.
     SiteProps = z_sites_manager:get_site_config(Host),
 
+    Proc = {z_proc,
+             {z_proc, start_link, [SiteProps]},
+             permanent, 5000, worker, dynamic},
+
     Notifier = {z_notifier,
                 {z_notifier, start_link, [SiteProps]}, 
                 permanent, 5000, worker, dynamic},
@@ -104,7 +108,7 @@ init(Host) ->
                     permanent, 5000, worker, dynamic},
 
     Processes = [
-            Notifier, Depcache, Translation, Installer, Session, 
+            Proc, Notifier, Depcache, Translation, Installer, Session, 
             Dispatcher, Template, MediaClass, DropBox, Pivot,
             ModuleIndexer, Modules,
             PostStartup

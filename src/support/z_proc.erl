@@ -7,7 +7,12 @@
 
 -include("include/zotonic.hrl").
 
--export([register/3, unregister/2, whereis/2]).
+-export([start_link/1, register/3, unregister/2, whereis/2]).
+
+% @doc Start the process registry.
+start_link(SiteProps) when is_list(SiteProps) ->
+    {host, Host} = proplists:lookup(host, SiteProps),
+    reggy_reg:start_link(registry(Host)).
 
 % @doc Register a Pid under Name. Name can be any erlang term.
 %
@@ -32,5 +37,5 @@ whereis(Name, Context) ->
 registry(#context{host=Host}) ->
     registry(Host);
 registry(Host) ->
-    z_utils:name_for_host(reggy, Host).
+    z_utils:name_for_host(z_proc, Host).
 

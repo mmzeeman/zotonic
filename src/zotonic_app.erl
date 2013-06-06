@@ -42,6 +42,8 @@ start(_Type, _StartArgs) ->
     inets:start(httpc,[{profile,zotonic}]),
     zotonic_deps:ensure(),
     ensure_started(mimetypes),
+    ensure_started(reggy),
+    ensure_started(tubby),
     zotonic_sup:start_link().
 
 %% @spec stop(_State) -> ServerRet
