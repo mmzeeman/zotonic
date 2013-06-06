@@ -46,7 +46,6 @@ init(DispatchArgs) ->
 
 %% @doc The request must have a valid session cookie.
 %%
-%% TODO: add comet transport.
 forbidden(ReqData, DispatchArgs) ->
 	Context = z_context:new(ReqData),
     Context1 = z_context:continue_session(Context),
