@@ -18,12 +18,14 @@
         geometric: {{ metric.value.geometric_mean/1000 }},
         harmonic: {{ metric.value.harmonic_mean/1000 }}
         }
-    {% else %}
+    {% elif metric.type == `meter` %}
         count: {{ metric.value.count }},
         one: {{ metric.value.one }},
         five: {{ metric.value.five }},
         fifteen: {{ metric.value.fifteen }},
         day: {{ metric.value.day }}
+    {% elif metric.type == `counter` %}
+        value: {{ metric.value }}
     {% endif %}
     },
 {% endfor %}

@@ -79,7 +79,7 @@ dispatch(Host, Path, ReqData) ->
                     method=wrq:method(ReqData), 
                     protocol=Protocol
               },
-    z_stats:update(#counter{name=requests}, #stats_from{system=webzmachine}),
+    z_stats:update(#meter{name=requests}, #stats_from{system=webzmachine}),
     handle_dispatch(gen_server:call(?MODULE, DispReq), DispReq, ReqDataUA).
 
 %% @doc Retrieve the fallback site.
@@ -201,18 +201,18 @@ handle_host_dispatch(Host, DispatchList, #dispatch{host=HostAsString, path=PathA
 
 handle_dispatch({Match, MatchedHost}, _DispReq, ReqDataUA) when is_tuple(Match) ->
     % Known host, known dispatch rule
-    z_stats:update(#counter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
+    z_stats:update(#meter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
     {ok, ReqDataHost} = webmachine_request:set_metadata(zotonic_host, MatchedHost, ReqDataUA),
     {Match, ReqDataHost};
 handle_dispatch({redirect, MatchedHost}, _DispReq, ReqDataUA) when is_atom(MatchedHost) ->
     % Redirect to other host, same path
-    z_stats:update(#counter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
+    z_stats:update(#meter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
     RawPath = wrq:raw_path(ReqDataUA),
     Uri = z_context:abs_url(RawPath, z_context:new(MatchedHost)), 
     {handled, redirect(true, z_convert:to_list(Uri), ReqDataUA)};
 handle_dispatch({redirect, MatchedHost, NewPathOrURI, IsPermanent}, _DispReq, ReqDataUA) when is_atom(MatchedHost) ->
     % Redirect to some site, new path or uri
-    z_stats:update(#counter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
+    z_stats:update(#meter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
     AbsURI = z_context:abs_url(NewPathOrURI, z_context:new(MatchedHost)),
     {handled, redirect(IsPermanent, z_convert:to_list(AbsURI), ReqDataUA)};
 handle_dispatch({redirect_protocol, NewProtocol, NewHost}, _DispReq, ReqDataUA) ->
@@ -255,13 +255,13 @@ handle_rewrite({ok, Id}, DispReq, MatchedHost, NonMatchedPathTokens, _Bindings, 
     %% Retry with the resource's default page uri
     case m_rsc:p_no_acl(Id, default_page_url, Context) of
         undefined ->
-            z_stats:update(#counter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
+            z_stats:update(#meter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost}),
             {{no_dispatch_match, MatchedHost, NonMatchedPathTokens}, ReqDataHost};
         DefaultPagePathBin ->
             DefaultPagePath = binary_to_list(DefaultPagePathBin),
             case gen_server:call(?MODULE, DispReq#dispatch{path=DefaultPagePath}) of
                 {no_dispatch_match, MatchedHost1, NonMatchedPathTokens1, _} ->
-                    z_stats:update(#counter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost1}),
+                    z_stats:update(#meter{name=requests}, #stats_from{system=webzmachine, host=MatchedHost1}),
                     {ok, ReqDataHost1} = webmachine_request:set_metadata(zotonic_host, MatchedHost1, ReqDataHost),
                     {{no_dispatch_match, MatchedHost1, NonMatchedPathTokens1}, ReqDataHost1};
                 {no_host_match} ->

@@ -42,9 +42,9 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    z_stats:new(#counter{name=requests}, #stats_from{system=webzmachine}),
-    z_stats:new(#counter{name=requests}, #stats_from{system=db}),
-    z_stats:new(#counter{name=out}, #stats_from{system=webzmachine}),
+    z_stats:new(#meter{name=requests}, #stats_from{system=webzmachine}),
+    z_stats:new(#meter{name=requests}, #stats_from{system=db}),
+    z_stats:new(#meter{name=out}, #stats_from{system=webzmachine}),
     z_stats:new(#histogram{name=duration}, #stats_from{system=webzmachine}),
     z_stats:new(#histogram{name=duration}, #stats_from{system=db}),
 

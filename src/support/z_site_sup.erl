@@ -39,9 +39,9 @@ start_link(Host) ->
 %% @doc Supervisor callback, returns the supervisor tree for a zotonic site
 init(Host) ->
     HostStats = #stats_from{host=Host},
-    z_stats:new(#counter{name=requests}, HostStats#stats_from{system=webzmachine}),
-    z_stats:new(#counter{name=requests}, HostStats#stats_from{system=db}),
-    z_stats:new(#counter{name=out}, HostStats#stats_from{system=webzmachine}),
+    z_stats:new(#meter{name=requests}, HostStats#stats_from{system=webzmachine}),
+    z_stats:new(#meter{name=requests}, HostStats#stats_from{system=db}),
+    z_stats:new(#meter{name=out}, HostStats#stats_from{system=webzmachine}),
     z_stats:new(#histogram{name=duration}, HostStats#stats_from{system=webzmachine}),
     z_stats:new(#histogram{name=duration}, HostStats#stats_from{system=db}),
 

@@ -42,6 +42,8 @@ new(Stat, From) ->
     Key = key(Stat, From),
     case Stat of
         #counter{} ->
+            folsom_metrics:new_counter(Key);
+        #meter{} ->
             folsom_metrics:new_meter(Key);
         #histogram{} ->
             folsom_metrics:new_histogram(Key, slide)
@@ -84,7 +86,7 @@ log_access(#wm_log_data{end_time=undefined}) ->
 log_access(#wm_log_data{start_time=StartTime, end_time=EndTime, response_length=ResponseLength}=LogData) ->
     try 
         Duration = #histogram{name=duration, value=timer:now_diff(EndTime, StartTime)},
-        Out = #counter{name=out, value=ResponseLength},
+        Out = #meter{name=out, value=ResponseLength},
         System = #stats_from{system=webzmachine},
 
         %% The request has already been counted by z_sites_dispatcher.
@@ -107,11 +109,17 @@ log_access(#wm_log_data{start_time=StartTime, end_time=EndTime, response_length=
 %% Some helper functions.
 
 update_metric(#counter{op=incr, value=Value}=Stat, From) ->
+    folsom_metrics:notify(key(Stat, From), {inc, Value});
+update_metric(#counter{op=decr, value=Value}=Stat, From) ->
+    folsom_metrics:notify(key(Stat, From), {dec, Value});
+update_metric(#meter{op=incr, value=Value}=Stat, From) ->
     folsom_metrics:notify(key(Stat, From), Value);
 update_metric(#histogram{value=Value}=Stat, From) ->
     folsom_metrics:notify({key(Stat, From), Value}).
-  
+
 key(#counter{name=Name}, #stats_from{host=Host, system=System}) ->
+    {Host, System, Name};  
+key(#meter{name=Name}, #stats_from{host=Host, system=System}) ->
 	{Host, System, Name};
 key(#histogram{name=Name}, #stats_from{host=Host, system=System}) ->
 	{Host, System, Name}.    

@@ -74,5 +74,5 @@ get_metric_type(Key) ->
 
 get_metric_value(Key, histogram) ->
     folsom_metrics:get_histogram_statistics(Key);
-get_metric_value(Key, _) ->
+get_metric_value(Key, Type) when Type =:= meter orelse Type =:= counter ->
     folsom_metrics:get_metric_value(Key).

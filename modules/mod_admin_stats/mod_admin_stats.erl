@@ -44,6 +44,7 @@ observe_admin_menu(admin_menu, Acc, Context) ->
 
 observe_postback_notify(#postback_notify{ message="update_metrics" }, Context) ->
     {Output, Context1} = z_template:render_to_iolist("_metrics_jsdata.tpl", [], Context),
+
     z_context:add_script_page(
       io_lib:format("z_event('new_metrics', ~s);", [z_convert:to_flatlist(Output)]),
       Context1),
