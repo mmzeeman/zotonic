@@ -20,7 +20,8 @@
 
 -record(stats_from, 
     {host=zotonic,
-     system=core
+     system=core,
+     rsc_id=undefined
     }).
 
 %% @doc Counters provide increment and decrement capabilities for a single value.

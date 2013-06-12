@@ -11,14 +11,17 @@
 	#}
 	{% include "_js_include_jquery.tpl" %}
 
-  <script type="text/javascript">
+  <script type="text/javascript"> 	
     function z_bus_host() {
     	var url = window.location.pathname + '?m=p'; 
     	$.ajax({ 
 			url: url, 
 			type: "post",
 			data: "z_pageid={{ q.z_pageid|urlencode }}", 
-			dataType: "text"
+			dataType: "text",
+			async: true,
+            cache: false,
+            headers: {"cache-control": "no-cache" }
 		}).done(function(data, textStatus) {
 			z_bus_data(data);
 			setTimeout(function() { z_bus_host(); }, 200);
@@ -26,11 +29,13 @@
 			setTimeout(function() { z_bus_host(); }, 1000);
 		});
 	}
-	z_bus_host();
+	//z_bus_host();
 
 	function z_bus_data(data) {
-		if('bus_message' in window) 
-			window.bus_message(data);
+		//if('bus_message' in window) 
+		//	window.bus_message({data: data});
+		//alert(window.parent);
+		window.parent.postMessage({data: data}, location.protocol + "//" + location.host);
 	}
 	</script>
   </body>

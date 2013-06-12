@@ -44,9 +44,9 @@ m_find_value(System, #m{ value=metric }=M, _Context) ->
     M#m{ value={metric, System} };
 m_find_value(Name, #m{ value={metric, System} }=M, #context{ host=Host }) ->
     M#m{ value={key, {Host, System, Name}} };
-m_find_value(system, #m{ value={key, {_, System, _}} }, _Context) ->
+m_find_value(system, #m{ value={key, {_, System, _, _}} }, _Context) ->
     System;
-m_find_value(name, #m{ value={key, {_, _, Name}} }, _Context) ->
+m_find_value(name, #m{ value={key, {_, _, _, Name}} }, _Context) ->
     Name;
 m_find_value(type, #m{ value={key, Key} }, _Context) ->
     get_metric_type(Key);
@@ -66,7 +66,7 @@ m_value(#m{ value=undefined }, _Context) ->
 
 get_metrics(#context{ host=Host }) ->
     M = #m{ model=?MODULE },
-    [M#m{ value={key, Key} } || {H,_,_}=Key <- folsom_metrics:get_metrics(), H==Host].
+    [M#m{ value={key, Key} } || {H,_,_,_}=Key <- folsom_metrics:get_metrics(), H==Host].
 
 get_metric_type(Key) ->
     [{Key, [{type, Type}]}] = folsom_metrics:get_metric_info(Key),

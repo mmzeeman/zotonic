@@ -50,6 +50,13 @@ new(Stat, From) ->
     end,
     folsom_metrics:tag_metric(Key, tag(From)).
 
+%% @doc Delete a counter, meter or histogram
+%%
+delete(Stat, From) ->
+    Key = key(Stat, From),
+    folsom_metrics:delete_metric(Key).
+
+
 %% @doc Update a counter, histogram, whatever.
 %%
 update(What, StatsFrom) when is_tuple(StatsFrom) ->
@@ -57,7 +64,7 @@ update(What, StatsFrom) when is_tuple(StatsFrom) ->
 update(_Stat, []) ->
     ok;
 update(Stat, [H|T]) ->
-    update(Stat, H),
+    update_metric(Stat, H),
     update(Stat, T).
 
 %% @doc Execute the function, and store the measured execution time.
@@ -109,20 +116,22 @@ log_access(#wm_log_data{start_time=StartTime, end_time=EndTime, response_length=
 %% Some helper functions.
 
 update_metric(#counter{op=incr, value=Value}=Stat, From) ->
+    ?DEBUG(Stat),
     folsom_metrics:notify(key(Stat, From), {inc, Value});
 update_metric(#counter{op=decr, value=Value}=Stat, From) ->
+    ?DEBUG(Stat),
     folsom_metrics:notify(key(Stat, From), {dec, Value});
 update_metric(#meter{op=incr, value=Value}=Stat, From) ->
     folsom_metrics:notify(key(Stat, From), Value);
 update_metric(#histogram{value=Value}=Stat, From) ->
     folsom_metrics:notify({key(Stat, From), Value}).
 
-key(#counter{name=Name}, #stats_from{host=Host, system=System}) ->
-    {Host, System, Name};  
-key(#meter{name=Name}, #stats_from{host=Host, system=System}) ->
-	{Host, System, Name};
-key(#histogram{name=Name}, #stats_from{host=Host, system=System}) ->
-	{Host, System, Name}.    
+key(#counter{name=Name}, #stats_from{host=Host, system=System, rsc_id=Id}) ->
+    {Host, System, Id, Name};  
+key(#meter{name=Name}, #stats_from{host=Host, system=System, rsc_id=Id}) ->
+	{Host, System, Id, Name};
+key(#histogram{name=Name}, #stats_from{host=Host, system=System, rsc_id=Id}) ->
+	{Host, System, Id, Name}.    
 
 tag(#stats_from{host=Host}) ->
     Host.
