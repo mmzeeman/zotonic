@@ -25,7 +25,9 @@
 -export([
     init/0,
     new/2,
+    delete/2,
     update/2,
+    get_metric_value/2,
     timed_update/3, timed_update/4, timed_update/5]).
 
 %% Act as a webmachine logger.
@@ -111,16 +113,26 @@ log_access(#wm_log_data{start_time=StartTime, end_time=EndTime, response_length=
         webmachine_logger:log_access(LogData)
     end.
 
-    
+%% @doc Return the value of the metric.
+%%
+get_metric_value(Stat, From) ->
+    Key = key(Stat, From),
+    case Stat of
+        #histogram{} ->
+            folsom_metrics:get_histogram_statistics(Key);
+        _ ->
+            folsom_metrics:get_metric_value(Key)
+    end.
 
-%% Some helper functions.
+
+%% Some helper functions
 
 update_metric(#counter{op=incr, value=Value}=Stat, From) ->
-    ?DEBUG(Stat),
     folsom_metrics:notify(key(Stat, From), {inc, Value});
 update_metric(#counter{op=decr, value=Value}=Stat, From) ->
-    ?DEBUG(Stat),
     folsom_metrics:notify(key(Stat, From), {dec, Value});
+update_metric(#counter{op=clear}=Stat, From) ->
+    folsom_metrics:notify(key(Stat, From), clear);
 update_metric(#meter{op=incr, value=Value}=Stat, From) ->
     folsom_metrics:notify(key(Stat, From), Value);
 update_metric(#histogram{value=Value}=Stat, From) ->
@@ -135,3 +147,4 @@ key(#histogram{name=Name}, #stats_from{host=Host, system=System, rsc_id=Id}) ->
 
 tag(#stats_from{host=Host}) ->
     Host.
+

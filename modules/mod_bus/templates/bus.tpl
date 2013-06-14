@@ -29,13 +29,10 @@
 			setTimeout(function() { z_bus_host(); }, 1000);
 		});
 	}
-	//z_bus_host();
 
 	function z_bus_data(data) {
-		//if('bus_message' in window) 
-		//	window.bus_message({data: data});
-		//alert(window.parent);
-		window.parent.postMessage({data: data}, location.protocol + "//" + location.host);
+		if('bus_message' in window) 
+			window.bus_message({data: data});
 	}
 	</script>
   </body>
