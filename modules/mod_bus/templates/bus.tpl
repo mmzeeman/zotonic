@@ -32,7 +32,7 @@
 
 	function z_bus_data(data) {
 		if('bus_message' in window) 
-			window.bus_message({data: data});
+			window.bus_message(data);
 	}
 	</script>
   </body>
