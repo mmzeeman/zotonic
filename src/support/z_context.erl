@@ -118,7 +118,9 @@
 
     cookie_domain/1,
     document_domain/1,
-    streamhost/1
+    streamhost/1,
+    websockethost/1,
+    has_websockethost/1
 ]).
 
 -include_lib("zotonic.hrl").
@@ -911,7 +913,7 @@ document_domain(Context) ->
         Domain -> Domain
     end.
 
-%% @doc Fetch the domain and port for stream (comet/websocket) connections
+%% @doc Fetch the domain and port for stream comet connections
 %% @spec streamhost(Context) -> list()
 streamhost(Context) ->
     case m_site:get(streamhost, Context) of
@@ -921,6 +923,20 @@ streamhost(Context) ->
             Domain
     end.
 
+%% @doc Fetch the domain and port for websocket connections
+%% @spec websockethost(Context) -> list()
+websockethost(Context) ->
+    case m_site:get(websockethost, Context) of
+        Empty when Empty == undefined; Empty == []; Empty == <<>> ->
+            hostname_port(Context);
+        Domain ->
+            Domain
+    end.
+
+%% @doc Return true iff this site has a separate configured websockethost
+%% @spec has_websockethost(Context) -> bool()
+has_websockethost(Context) ->
+    z_convert:to_bool(m_site:get(websockethost, Context)).
 
 %% ------------------------------------------------------------------------------------
 %% Local helper functions
