@@ -125,7 +125,6 @@ handle_cast({attach_websocket, WsPid}, #state{websocket_pid=undefined,
         comet_pid=undefined}=State) ->
     case z_utils:is_process_alive(WsPid) of
         true ->
-            ?DEBUG(attach_websocket),
             Ref = erlang:monitor(process, WsPid),
             StateWs = State#state{websocket_pid=WsPid, monitor_ref=Ref},
             StateMsg = handle_queued_ws_messages(StateWs), 
@@ -139,7 +138,11 @@ handle_cast({attach_websocket, WsPid}, State) ->
 
 handle_cast({detach_websocket, WsPid}, #state{websocket_pid=WsPid, monitor_ref=Ref}=State) ->
     erlang:demonitor(Ref, [flush]),
-    {noreply, State#state{websocket_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};    
+    {noreply, State#state{websocket_pid=undefined, monitor_ref=undefined, last_detach=z_utils:now()}};  
+
+handle_cast({detach_websocket, _WsPid}, #state{websocket_pid=undefined}=State) ->
+    ?DEBUG(websocket_not_attached),
+    {noreply, State};  
 
 %% @doc Attach a comet pid. 
 handle_cast({attach_comet, CometPid}, #state{comet_pid=undefined, websocket_pid=undefined}=State) ->
