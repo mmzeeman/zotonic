@@ -80,16 +80,18 @@ function z_dialog_confirm(options)
 /* Growl messages
 ---------------------------------------------------------- */
 
-function z_growl_add(message, stay, type)
+function z_growl_add(message, stay, type, stayTime)
 {
     stay = stay || false;
     type = type || 'notice';
+    stayTime = stayTime || 10000;
 
     $.noticeAdd(
     {
         text: message,
         stay: stay,
-        type: type
+        type: type,
+        stayTime: stayTime
     });
 
     if(type == 'error' && window.console)
