@@ -20,9 +20,10 @@
 -export([render_action/4]).
 
 render_action(_TriggerId, _TargetId, Args, Context) ->
-    Text   = proplists:get_value(text, Args, ""),
-    Stay   = proplists:get_value(stay, Args, 0),
-    Type   = proplists:get_value(type, Args, "notice"),
+    Text    = proplists:get_value(text, Args, ""),
+    Stay    = proplists:get_value(stay, Args, 0),
+    Type    = proplists:get_value(type, Args, "notice"),
+    StayTime = proplists:get_value(stay_time, Args),
 
     TextJS = z_utils:js_escape(Text, Context),
     StayJS = case z_convert:to_bool(Stay) of 
@@ -30,5 +31,12 @@ render_action(_TriggerId, _TargetId, Args, Context) ->
                 false -> $0
              end,
 	TypeJS = z_utils:js_escape(Type, Context),
-	Script = [<<"z_growl_add(\"">>,TextJS,<<"\", ">>, StayJS,<<",\"">>, TypeJS, $", $), $;],
+    StayTimeJS = case StayTime of
+        undefined -> 
+            <<"undefined">>;
+        Time when is_integer(Time) ->
+            z_convert:to_binary(StayTime)
+    end,
+
+	Script = [<<"z_growl_add(\"">>,TextJS,<<"\", ">>, StayJS,<<",\"">>, TypeJS, <<"\",">>, StayTimeJS, $), $;],
 	{Script, Context}.
