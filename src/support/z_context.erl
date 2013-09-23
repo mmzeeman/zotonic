@@ -120,7 +120,8 @@
     document_domain/1,
     streamhost/1,
     websockethost/1,
-    has_websockethost/1
+    has_websockethost/1,
+    websocketprotocol/1
 ]).
 
 -include_lib("zotonic.hrl").
@@ -937,6 +938,16 @@ websockethost(Context) ->
 %% @spec has_websockethost(Context) -> bool()
 has_websockethost(Context) ->
     z_convert:to_bool(m_site:get(websockethost, Context)).
+
+%% @doc return the configured websocket protocol. Returns undefined if it was not set.
+%% @spec websocketprotocol(Context) list() | undefined.
+websocketprotocol(Context) ->
+    case m_site:get(websocketprotocol, Context) of
+        Empty when Empty == undefined; Empty == []; Empty == <<>> ->
+            undefined;
+        Protocol ->
+            Protocol
+    end.
 
 %% ------------------------------------------------------------------------------------
 %% Local helper functions

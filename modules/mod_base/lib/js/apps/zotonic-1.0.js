@@ -27,6 +27,7 @@ var z_ws					= false;
 var z_ws_opened				= false;
 var z_stream_host           = undefined;
 var z_websocket_host        = undefined;
+var z_websocket_protocol    = undefined;
 var z_comet_is_running		= false;
 var z_doing_postback		= false;
 var z_spinner_show_ct		= 0;
@@ -494,10 +495,16 @@ function z_tinymce_remove(element)
 /* Comet long poll or WebSockets connection
 ---------------------------------------------------------- */
 
-function z_stream_start(host, ws_host)
+function z_stream_start(host, ws_host, ws_protocol)
 {
     z_stream_host = host;
     z_websocket_host = ws_host || host;
+
+    if (window.location.protocol == "https:")
+        z_websocket_protocol = "wss:";
+    else
+        z_websocket_protocol = ws_protocol || "ws:";
+
 
     if (!z_ws && !z_comet_is_running)
     {
@@ -574,11 +581,7 @@ function z_websocket_restart()
 
 function z_websocket_start(host)
 {
-    var protocol = "ws:";
-    if (window.location.protocol == "https:")
-    {
-        protocol = "wss:";
-    }
+    var protocol = z_websocket_protocol;
     z_ws = new WebSocket(protocol+"//"+z_websocket_host+"/websocket?z_pageid="+z_pageid+"&z_ua="+z_ua);
 
     var connect_timeout = setTimeout(function() { 

@@ -33,8 +33,14 @@ render(_Params, _Vars, Context) ->
 stream_start_script(false, Context) ->
     [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), ");"];
 stream_start_script(true, Context) ->
-    [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,,
-        $', z_context:websockethost(Context), $', ");"].
+    case z_context:websocketprotocol(Context) of 
+        undefined ->
+            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,,
+                $', z_context:websockethost(Context), $', ");"];
+        WsProtocol ->
+            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,,
+                $', z_context:websockethost(Context), $', $,, $', WsProtocol, $', ");"]
+    end.
     
 % Add random number 0-9
 add_subdomain([$?|Hostname]) ->
