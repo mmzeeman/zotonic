@@ -119,9 +119,9 @@
     cookie_domain/1,
     document_domain/1,
     streamhost/1,
+    use_websockets/1,
     websockethost/1,
-    has_websockethost/1,
-    websocketprotocol/1
+    has_websockethost/1
 ]).
 
 -include_lib("zotonic.hrl").
@@ -924,6 +924,16 @@ streamhost(Context) ->
             Domain
     end.
 
+%% @doc 
+use_websockets(Context) ->
+    case m_site:get(use_websockets, Context) of
+        Empty when Empty == undefined; Empty == []; Empty == <<>> ->
+            true;
+        Value ->
+            z_convert:to_bool(Value)
+    end.
+
+
 %% @doc Fetch the domain and port for websocket connections
 %% @spec websockethost(Context) -> list()
 websockethost(Context) ->
@@ -939,15 +949,6 @@ websockethost(Context) ->
 has_websockethost(Context) ->
     z_convert:to_bool(m_site:get(websockethost, Context)).
 
-%% @doc return the configured websocket protocol. Returns undefined if it was not set.
-%% @spec websocketprotocol(Context) list() | undefined.
-websocketprotocol(Context) ->
-    case m_site:get(websocketprotocol, Context) of
-        Empty when Empty == undefined; Empty == []; Empty == <<>> ->
-            undefined;
-        Protocol ->
-            Protocol
-    end.
 
 %% ------------------------------------------------------------------------------------
 %% Local helper functions

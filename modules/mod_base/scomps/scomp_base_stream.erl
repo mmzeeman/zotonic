@@ -26,20 +26,18 @@
 vary(_Params, _Context) -> nocache.
 
 render(_Params, _Vars, Context) ->
-    Script = stream_start_script(z_context:has_websockethost(Context), Context),
+    Script = stream_start_script(z_context:use_websockets(Context), Context),
     {ok, z_script:add_script(Script, Context)}.
 
 % Make the call of the start script.
 stream_start_script(false, Context) ->
-    [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), ");"];
+    [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), ", false);"];
 stream_start_script(true, Context) ->
-    case z_context:websocketprotocol(Context) of 
+    case z_context:websockethost(Context) of 
         undefined ->
-            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,,
-                $', z_context:websockethost(Context), $', ");"];
-        WsProtocol ->
-            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,,
-                $', z_context:websockethost(Context), $', $,, $', WsProtocol, $', ");"]
+            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), ");"];
+        WsHost ->
+            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,, $', WsHost, $', ");"]
     end.
     
 % Add random number 0-9
