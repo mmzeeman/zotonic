@@ -496,23 +496,19 @@ function z_tinymce_remove(element)
 /* Comet long poll or WebSockets connection
 ---------------------------------------------------------- */
 
-function z_stream_start(host, ws_host)
+function z_stream_start(options)
 {
-    z_stream_host = host;
+    z_stream_host = options.host;
+    z_websocket_host = options.ws_host || z_stream_host;
 
-    if(ws_host === false)
+    if(options.use_ws === false)
         z_use_websockets = false;
     else if("WebSocket" in window)
         z_use_websockets = true;
     else
         z_use_websockets = false;
-    
-    if(ws_host === true)
-        z_websocket_host = host;
-    else
-        z_websocket_host = ws_host || host;        
 
-    if (window.location.protocol == "https:")
+    if (options.wss || window.location.protocol == "https:")
         z_websocket_protocol = "wss:";
     else
         z_websocket_protocol = "ws:";
@@ -521,11 +517,11 @@ function z_stream_start(host, ws_host)
     {
         if (z_use_websockets)
         {
-            z_websocket_start(host);
+            z_websocket_start(z_stream_host);
         }
         else
         {
-            setTimeout(function() { z_comet(host); }, 2000);
+            setTimeout(function() { z_comet(z_stream_host); }, 2000);
             z_comet_is_running = true;
         }
     }
@@ -596,7 +592,7 @@ function z_websocket_start(host)
     z_ws = new WebSocket(protocol+"//"+z_websocket_host+"/websocket?z_pageid="+z_pageid+"&z_ua="+z_ua);
 
     var connect_timeout = setTimeout(function() { 
-        if(z_ws.readyState != 0) return;
+        if(z_ws && z_ws.readyState != 0) return;
         // Failed to open a websocket within the specified time - try to start comet
         z_ws = undefined;
         z_comet(host);

@@ -119,6 +119,7 @@
     cookie_domain/1,
     document_domain/1,
     streamhost/1,
+    secure_websockets/1,
     use_websockets/1,
     websockethost/1,
     has_websockethost/1
@@ -924,11 +925,22 @@ streamhost(Context) ->
             Domain
     end.
 
-%% @doc 
+%% @doc When ste to false zotonic will not attempt to setup a websocket.
+%%
 use_websockets(Context) ->
     case m_site:get(use_websockets, Context) of
         Empty when Empty == undefined; Empty == []; Empty == <<>> ->
             true;
+        Value ->
+            z_convert:to_bool(Value)
+    end.
+
+%% @doc When set to true, zotonic will always setup secure wss websockets.
+%%
+secure_websockets(Context) ->
+    case m_site:get(secure_websockets, Context) of
+        Empty when Empty == undefined; Empty == []; Empty == <<>> ->
+            false;
         Value ->
             z_convert:to_bool(Value)
     end.

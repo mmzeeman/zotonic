@@ -26,35 +26,41 @@
 vary(_Params, _Context) -> nocache.
 
 render(_Params, _Vars, Context) ->
-    Script = stream_start_script(z_context:use_websockets(Context), Context),
+    Script = stream_start_script(Context),
     {ok, z_script:add_script(Script, Context)}.
 
 % Make the call of the start script.
-stream_start_script(false, Context) ->
-    [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), ", false);"];
-stream_start_script(true, Context) ->
-    case z_context:websockethost(Context) of 
-        undefined ->
-            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), ");"];
-        WsHost ->
-            [<<"z_stream_start(">>, add_subdomain(z_context:streamhost(Context)), $,, $', WsHost, $', ");"]
-    end.
+stream_start_script(Context) ->
+    Options = [{host, add_subdomain(z_context:streamhost(Context))}],
+    Options1 = case z_context:use_websockets(Context) of 
+        false -> [{use_ws, false} | Options];
+        true -> Options
+    end,
+    Options2 = case z_context:has_websockethost(Context) of
+        false -> Options1;
+        true -> [{ws_host, z_context:websockethost(Context)} | Options1]
+    end,
+    Options3 = case z_context:secure_websockets(Context) of
+        false -> Options2;
+        true -> [{wss, true} | Options2]
+    end,
+    [<<"z_stream_start(">>, z_utils:js_object(Options3), ");"].
     
 % Add random number 0-9
 add_subdomain([$?|Hostname]) ->
-    [$', integer_to_list(z_ids:number(10)), Hostname, $'];
+    [integer_to_list(z_ids:number(10)), Hostname];
 add_subdomain(<<$?,Hostname/binary>>) ->
-    [$', integer_to_list(z_ids:number(10)), Hostname, $'];
+    [integer_to_list(z_ids:number(10)), Hostname];
 
 % Add random number, no real limits
 add_subdomain([$*|Hostname]) ->
-    [$', integer_to_list(z_ids:number()),Hostname,$'];
+    [integer_to_list(z_ids:number()),Hostname];
 add_subdomain(<<$*,Hostname/binary>>) ->
-    [$',integer_to_list(z_ids:number()), Hostname, $'];
+    [integer_to_list(z_ids:number()), Hostname];
 add_subdomain([$.|_] = Hostname) ->
-    [$',integer_to_list(z_ids:number()), Hostname, $'];
+    [integer_to_list(z_ids:number()), Hostname];
 add_subdomain(<<$.,_/binary>> = Hostname) ->
-    [$', integer_to_list(z_ids:number()), Hostname, $'];
+    [integer_to_list(z_ids:number()), Hostname];
     
 % special case for the zotonic_status site
 add_subdomain(none) ->
@@ -62,4 +68,4 @@ add_subdomain(none) ->
     
 % Just connect to the hostname itself
 add_subdomain(Hostname) ->
-    [$', Hostname, $'].
+    Hostname.
