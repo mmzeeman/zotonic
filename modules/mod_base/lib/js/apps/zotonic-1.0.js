@@ -26,7 +26,7 @@ Based on nitrogen.js which is copyright 2008-2009 Rusty Klophaus
 var z_ws					= false;
 var z_ws_opened				= false;
 var z_stream_host           = undefined;
-var z_use_websockets        = true;
+var z_use_websockets        = "WebSocket" in window;
 var z_websocket_host        = undefined;
 var z_websocket_protocol    = undefined;
 var z_comet_is_running		= false;
@@ -41,7 +41,7 @@ var z_on_visible_checks		= [];
 var z_on_visible_timer		= undefined;
 var z_unique_id_counter		= 0;
 var z_language				= "en";
-var z_ua                        = "desktop";
+var z_ua                    = "desktop";
 
 /* Non modal dialogs
 ---------------------------------------------------------- */
@@ -500,11 +500,13 @@ function z_stream_start(host, ws_host)
 {
     z_stream_host = host;
 
-    if(ws_host === false && "WebSocket" in window)
+    if(ws_host === false)
         z_use_websockets = false;
-    else
+    else if("WebSocket" in window)
         z_use_websockets = true;
-
+    else
+        z_use_websockets = false;
+    
     if(ws_host === true)
         z_websocket_host = host;
     else
