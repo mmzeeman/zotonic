@@ -1,6 +1,9 @@
 %% -*- mode: erlang -*-
 %% Base dispatch rules for zotonic
 [
+ %% Engine.io connection
+ {engine_io, ["engine.io"],          controller_engine_io, [{ssl, any}, {no_session, true}]},
+
  %% Comet connection, used with long polls from the browser.
  {comet,     ["comet"],              controller_comet, [{ssl, any}, {no_session, true}]},
  

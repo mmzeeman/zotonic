@@ -41,6 +41,7 @@ var z_unique_id_counter		= 0;
 var z_language				= "en";
 var z_ua					= "desktop";
 var z_pageid				= '';
+var z_engine;
 
 
 function z_set_page_id( page_id )
@@ -498,6 +499,13 @@ function z_tinymce_remove(element)
             $(this).tinymce().remove();
         }
     });
+}
+
+/* Engine io connection
+---------------------------------------------------------- */
+function z_engine_start(host)
+{
+    z_engine = eio(host);
 }
 
 
