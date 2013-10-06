@@ -35,7 +35,7 @@
 -export([
     websocket_start/2,
     websocket_init/1,
-    websocket_message/2,
+    websocket_message/3,
     websocket_info/2,
     websocket_terminate/2]).
 
@@ -49,13 +49,20 @@
 %% Timeout for comet flush when there is data, allow for 50 msec more to gather extra data before flushing
 -define(COMET_FLUSH_DATA,  50).
 
+-define(OPEN, $0).
+-define(CLOSE, $1).
+-define(PING, $2).
+-define(PONG, $3).
+-define(MESSAGE, $4).
+-define(UPGRADE, $5).
+-define(NOOP, $6).
+
 
 init(ConfigProps) -> 
     {ok, ConfigProps}.
 
 %%
 service_available(ReqData, ConfigProps) ->
-    ?DEBUG(service_available),
     NewContext = z_context:new(ReqData, ?MODULE),
     ConfigContext = z_context:set(ConfigProps, NewContext),
     NoindexContext = z_context:set_noindex_header(ConfigContext),
@@ -71,10 +78,9 @@ service_available(ReqData, ConfigProps) ->
 
 %%
 malformed_request(ReqData, Context) ->
-    ?DEBUG(malformed),
     Context1 = ?WM_REQ(ReqData, Context),
     case z_context:get(protocol, Context1) of
-        undefined -> 
+        undefined ->
             {true, ReqData, Context1};
         _ ->
             AllContext = z_context:ensure_all(Context1),
@@ -108,22 +114,33 @@ content_types_provided(ReqData, Context) ->
     {[{"text/plain", process_get}], ReqData, Context}.
 
 %% 
-process_get(ReqData, #context{page_pid=PagePid}=Context) ->
+process_get(ReqData, #context{page_pid=PagePid}=Context) when is_pid(PagePid) ->
     Context1 = ?WM_REQ(ReqData, Context),
     PageId = z_session_page:page_id(Context), 
-    
+
     %% What happens now depends on the state... 
-    erlang:monitor(process, PagePid),
-    TimerRef = erlang:send_after(55000, self(), flush),
-    process_get_loop(Context1, PageId, TimerRef, false).
+
+    %% either immediately send a response, or attach to the page session.
+    case z_context:get_q(sid, Context) of
+        undefined ->
+            OpenMsg = [$0, open_msg(PageId, Context1)],
+            {Output, OutputContext} = z_context:output(xhr_encode(OpenMsg), Context1),
+            ?WM_REPLY(Output, OutputContext);
+        _Sid ->
+            erlang:monitor(process, PagePid),
+            z_session_page:comet_attach(self(), PagePid),
+            TimerRef = erlang:send_after(55000, self(), flush),
+            process_get_loop(Context1, PageId, TimerRef, false)
+    end.
 
 
 %%
 open_msg(PageId, Context) ->
     Msg = [{sid, PageId}, 
-           {upgrades, []}, 
-           {pingInterval, 15000}, 
-           {pingTimeout, 30000}],
+           {upgrades, [websocket]},
+           % {upgrades, []}, 
+           {pingInterval, 55000}, 
+           {pingTimeout, 60000}],
     mochijson:binary_encode(z_json:to_mochijson(Msg, Context)).
 
 %% TODO: Note, the message can be utf-8. In that case the length should be 
@@ -133,27 +150,23 @@ xhr_encode(Msg) ->
     [integer_to_list(Size), $:, Msg].
 
 
-% %%
-% process_get(xhr, ReqData, Context) ->
-%     %% poll
-%     %%
-%     Context1 = ?WM_REQ(ReqData, Context),
-%     Context2 = z_context:ensure_all(Context1),
-%     Context3 = z_context:set_noindex_header(Context2),
-%     Rendered = "0{sid:'1234',upgrades:[],pingTimeout:60}",
-%     ?DEBUG(xhr_get),
-%     {Output, OutputContext} = z_context:output(Rendered, Context3),
-%     ?WM_REPLY(Output, OutputContext);
-
-
+%%
+%%
 process_get_loop(#context{page_pid=PagePid}=Context, PageId, TimerRef, HasData) ->
     receive
         flush ->
             ?DEBUG(flush),
             erlang:cancel_timer(TimerRef),
-
-            OpenMsg = [$0, ?DEBUG(open_msg(PageId, Context))],
-            {Output, OutputContext} = z_context:output(xhr_encode(OpenMsg), Context),
+            Msg = [$4, <<"hi">>],
+            {Output, OutputContext} = z_context:output(xhr_encode(Msg), Context),
+            z_session_page:comet_detach(PagePid),
+            ?WM_REPLY(Output, OutputContext);
+        close ->
+            ?DEBUG(close),
+            erlang:cancel_timer(TimerRef),
+            Msg = <<?CLOSE>>,
+            {Output, OutputContext} = z_context:output(xhr_encode(Msg), Context),
+            z_session_page:comet_detach(PagePid),
             ?WM_REPLY(Output, OutputContext);
         {'DOWN', _MonitorRef, process, PagePid, _Info} ->
             ?DEBUG(page_down),
@@ -183,9 +196,20 @@ protocol(Context) ->
 %% this request. I'm thinking about a 20/30 ms delay. That way long-polling
 %% connecion can be left in place.
 process_post(ReqData, Context) ->
-    ?DEBUG(post),
-    Context1 = ?WM_REQ(ReqData, Context),
-    ?WM_REPLY(true, Context1).
+    {ReqBody, RD1} = wrq:req_body(ReqData),
+    Context1 = ?WM_REQ(RD1, Context),
+    case ReqBody of
+        <<"1:2">> ->
+            RD2 = wrq:append_to_response_body(<<"1:3">>, RD1),
+            Context2 = z_context:set_reqdata(RD2, Context1),
+            ?WM_REPLY(true, Context2);
+        Msg ->
+            ?DEBUG(Msg),
+            RD2 = wrq:append_to_response_body(<<"1:6">>, RD1),
+            Context2 = z_context:set_reqdata(RD2, Context1),
+            ?WM_REPLY(true, Context2)
+    end.
+
 
 %% @doc Initiate the websocket connection upgrade
 websocket_start(ReqData, Context) ->
@@ -195,15 +219,26 @@ websocket_start(ReqData, Context) ->
 %% ------ built in websocket handler -----
 
 %% ws handler calls.
-websocket_init(_Context) ->
-    ?DEBUG(ws_init).
+websocket_init(_Context) -> 
+    ok.
 
-%% ws handler
-websocket_message(Msg, _Context) ->
-    ?DEBUG({ws_msg, Msg}).
+%% 
+websocket_message(<<?PING, Data/binary>>, Pid, _Context) ->
+    ?DEBUG(ping),
+    Pid ! {send_data, <<?PONG, Data/binary>>};
+websocket_message(<<?MESSAGE, Msg/binary>>, _Pid, _Context) ->
+    ?DEBUG({message, _Pid, Msg});
+websocket_message(<<?UPGRADE, _Data/binary>>, _Pid, Context) ->
+    %% Detach a possibly connected comet request and attach this websocket.
+    ?DEBUG({upgrade, Context#context.page_pid}),
+    % z_session_page:comet_send(close, Context),
+    z_session_page:websocket_attach(self(), Context).
+    
 
+%%
 websocket_info(Msg, _Context) -> 
     ?DEBUG({ws_info, Msg}).
 
+%%
 websocket_terminate(Reason, _Context) ->
     ?DEBUG({ws_terminate, Reason}).

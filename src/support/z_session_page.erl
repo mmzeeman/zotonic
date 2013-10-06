@@ -49,8 +49,11 @@
     add_script/2,
     add_script/1,
     get_scripts/1,
+    
     comet_attach/2,
     comet_detach/1,
+    comet_send/2,
+
     websocket_attach/2,
 
     get_attach_state/1,
@@ -140,6 +143,12 @@ comet_attach(CometPid, Pid) ->
 comet_detach(Pid) ->
     gen_server:cast(Pid, comet_detach).
 
+%% @doc Send a message to the attached comet process.
+comet_send(Msg, #context{page_pid=Pid}) ->
+    comet_send(Msg, Pid);
+comet_send(Msg, Pid) ->
+    gen_server:call(Pid, {comet_send, Msg}).
+
 %% @doc Attach the websocket request process to the page session, enabling sending scripts to the user agent
 websocket_attach(WsPid, #context{page_pid=Pid}) ->
     websocket_attach(WsPid, Pid);
@@ -221,6 +230,7 @@ handle_cast({comet_attach, CometPid}, State) ->
             {noreply, State}
     end;
 handle_cast(comet_detach, State) ->
+    ?DEBUG({comet_detach, State#page_state.comet_pid}),
     StateNoComet = State#page_state{comet_pid=undefined, last_detach=z_utils:now()},
     {noreply, StateNoComet};
 handle_cast({websocket_attach, WebsocketPid}, State) ->
@@ -296,6 +306,19 @@ handle_call(get_attach_state, _From, State) ->
         _Pid ->
             {reply, attached, State}
     end;
+
+handle_call({comet_send, Msg}, _From, #page_state{comet_pid=CometPid}=State) when is_pid(CometPid) ->
+    ?DEBUG({sending_close, CometPid}),
+    case catch (CometPid ! Msg) of
+        {'EXIT', {no_proc, _}} ->
+            ?DEBUG(no_proc),
+            {reply, not_attached, State};
+        _ ->
+            {reply, sent, State}
+    end;
+handle_call({comet_send, _Msg}, _From, State) ->
+    {reply, not_attached, State};
+  
 
 %% @doc Trap unknown calls
 handle_call(Message, _From, State) ->

@@ -506,6 +506,24 @@ function z_tinymce_remove(element)
 function z_engine_start(host)
 {
     z_engine = eio(host);
+
+    //z_engine.on('error', function(err) { console.log(err); });
+    //z_engine.on('flush', function() { console.log('buffer flush'); });
+    //z_engine.on('drain', function() { console.log('drain'); });
+    z_engine.on('upgrading', function() {console.log('upgrading'); })
+    
+    z_engine.onopen = function() {
+        console.log("z_engine is open");
+
+        z_engine.onmessage = function(data) {
+            console.log(data);
+        };
+
+        z_engine.onclose = function() {
+            console.log("closing engine io socket");
+            z_engine = undefined;
+        };
+    };
 }
 
 
