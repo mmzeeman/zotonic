@@ -123,12 +123,13 @@ process_get(ReqData, #context{page_pid=PagePid}=Context) when is_pid(PagePid) ->
     %% either immediately send a response, or attach to the page session.
     case z_context:get_q(sid, Context) of
         undefined ->
-            OpenMsg = [$0, open_msg(PageId, Context1)],
+            z_session_page:polling(Context),
+            OpenMsg = [?OPEN, open_msg(PageId, Context1)],
             {Output, OutputContext} = z_context:output(xhr_encode(OpenMsg), Context1),
             ?WM_REPLY(Output, OutputContext);
         _Sid ->
             erlang:monitor(process, PagePid),
-            z_session_page:comet_attach(self(), PagePid),
+            z_session_page:push_attach(self(), PagePid),
             TimerRef = erlang:send_after(55000, self(), flush),
             process_get_loop(Context1, PageId, TimerRef, false)
     end.
@@ -157,16 +158,16 @@ process_get_loop(#context{page_pid=PagePid}=Context, PageId, TimerRef, HasData) 
         flush ->
             ?DEBUG(flush),
             erlang:cancel_timer(TimerRef),
-            Msg = [$4, <<"hi">>],
+            Msg = [?MESSAGE, <<"hi">>],
             {Output, OutputContext} = z_context:output(xhr_encode(Msg), Context),
-            z_session_page:comet_detach(PagePid),
+            z_session_page:push_detach(PagePid),
             ?WM_REPLY(Output, OutputContext);
         close ->
             ?DEBUG(close),
             erlang:cancel_timer(TimerRef),
             Msg = <<?CLOSE>>,
             {Output, OutputContext} = z_context:output(xhr_encode(Msg), Context),
-            z_session_page:comet_detach(PagePid),
+            z_session_page:push_detach(PagePid),
             ?WM_REPLY(Output, OutputContext);
         {'DOWN', _MonitorRef, process, PagePid, _Info} ->
             ?DEBUG(page_down),
@@ -219,8 +220,9 @@ websocket_start(ReqData, Context) ->
 %% ------ built in websocket handler -----
 
 %% ws handler calls.
-websocket_init(_Context) -> 
-    ok.
+websocket_init(#context{page_pid=PagePid}) ->
+    erlang:monitor(process, PagePid),
+    z_session_page:ws_attach(self(), PagePid).
 
 %% 
 websocket_message(<<?PING, Data/binary>>, Pid, _Context) ->
@@ -228,11 +230,14 @@ websocket_message(<<?PING, Data/binary>>, Pid, _Context) ->
     Pid ! {send_data, <<?PONG, Data/binary>>};
 websocket_message(<<?MESSAGE, Msg/binary>>, _Pid, _Context) ->
     ?DEBUG({message, _Pid, Msg});
-websocket_message(<<?UPGRADE, _Data/binary>>, _Pid, Context) ->
+websocket_message(<<?UPGRADE, Data/binary>>, _Pid, Context) ->
     %% Detach a possibly connected comet request and attach this websocket.
-    ?DEBUG({upgrade, Context#context.page_pid}),
+    ?DEBUG({upgrade, Data}),
+    z_session_page:upgrade(Context);
+websocket_message(Data, _Pid, Context) ->
+    ?DEBUG({message, Data}).
     % z_session_page:comet_send(close, Context),
-    z_session_page:websocket_attach(self(), Context).
+    % z_session_page:websocket_attach(self(), Context).
     
 
 %%
