@@ -90,11 +90,12 @@ timed_update(Name, Mod, Fun, Args, StatsFrom) ->
 %%
 log_access(#wm_log_data{start_time=undefined}) -> 
     ok;
-log_access(#wm_log_data{end_time=undefined}) -> 
-    ok;
-log_access(#wm_log_data{start_time=StartTime, end_time=EndTime, response_length=ResponseLength}=LogData) ->
+log_access(#wm_log_data{finish_time=undefined}=LogData) -> 
+    log_access(LogData#wm_log_data{finish_time=os:timestamp()});
+log_access(#wm_log_data{start_time=StartTime, finish_time=FinishTime, 
+                        response_length=ResponseLength}=LogData) when StartTime =/= undefined ->
     try 
-        Duration = #histogram{name=duration, value=timer:now_diff(EndTime, StartTime)},
+        Duration = #histogram{name=duration, value=timer:now_diff(FinishTime, StartTime)},
         Out = #meter{name=out, value=ResponseLength},
         System = #stats_from{system=webzmachine},
 
