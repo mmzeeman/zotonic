@@ -505,7 +505,7 @@ function z_tinymce_remove(element)
 ---------------------------------------------------------- */
 function z_engine_start(host)
 {
-    z_engine = eio(host);
+    z_engine = eio(host+"?z_pageid="+z_pageid);
 
     //z_engine.on('error', function(err) { console.log(err); });
     //z_engine.on('flush', function() { console.log('buffer flush'); });

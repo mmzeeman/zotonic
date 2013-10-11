@@ -83,8 +83,8 @@ malformed_request(ReqData, Context) ->
         undefined ->
             {true, ReqData, Context1};
         _ ->
-            AllContext = z_context:ensure_all(Context1),
-            {false, ReqData, AllContext}
+            % AllContext = z_context:ensure_all(Context1),
+            {false, ReqData, Context1}
     end.
 
 %%
@@ -114,24 +114,25 @@ content_types_provided(ReqData, Context) ->
     {[{"text/plain", process_get}], ReqData, Context}.
 
 %% 
-process_get(ReqData, #context{page_pid=PagePid}=Context) when is_pid(PagePid) ->
+process_get(ReqData, Context) ->
     Context1 = ?WM_REQ(ReqData, Context),
-    PageId = z_session_page:page_id(Context), 
 
+    Context2 = z_context:ensure_all(Context1),
+    PageId = z_session_page:page_id(Context2), 
     %% What happens now depends on the state... 
 
     %% either immediately send a response, or attach to the page session.
-    case z_context:get_q(sid, Context) of
+    case z_context:get_q(sid, Context2) of
         undefined ->
-            z_session_page:polling(Context),
-            OpenMsg = [?OPEN, open_msg(PageId, Context1)],
-            {Output, OutputContext} = z_context:output(xhr_encode(OpenMsg), Context1),
+            z_session_page:polling(Context2),
+            OpenMsg = [?OPEN, open_msg(PageId, Context2)],
+            {Output, OutputContext} = z_context:output(xhr_encode(OpenMsg), Context2),
             ?WM_REPLY(Output, OutputContext);
         _Sid ->
-            erlang:monitor(process, PagePid),
-            z_session_page:push_attach(self(), PagePid),
+            erlang:monitor(process, Context2#context.page_pid),
+            z_session_page:push_attach(self(), Context2#context.page_pid),
             TimerRef = erlang:send_after(55000, self(), flush),
-            process_get_loop(Context1, PageId, TimerRef, false)
+            process_get_loop(Context2, PageId, TimerRef, false)
     end.
 
 
@@ -221,7 +222,7 @@ websocket_start(ReqData, Context) ->
 
 %% ws handler calls.
 websocket_init(#context{page_pid=PagePid}) ->
-    erlang:monitor(process, PagePid),
+    %% erlang:monitor(process, PagePid),
     z_session_page:ws_attach(self(), PagePid).
 
 %% 
@@ -239,7 +240,6 @@ websocket_message(Data, _Pid, Context) ->
     % z_session_page:comet_send(close, Context),
     % z_session_page:websocket_attach(self(), Context).
     
-
 %%
 websocket_info(Msg, _Context) -> 
     ?DEBUG({ws_info, Msg}).

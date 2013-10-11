@@ -100,6 +100,7 @@
 %% @doc Starts the person manager server
 -spec start_link(pid(), binary(), #context{}) -> {ok, pid()} | {error, term()}.
 start_link(SessionPid, PageId, Context) ->
+    ?DEBUG({start_link, SessionPid, PageId}),
     gen_server:start_link(?MODULE, {SessionPid,PageId,z_context:site(Context)}, []).
 
 stop(Pid) ->
@@ -314,39 +315,64 @@ handle_cast({append, Key, Value}, State) ->
 
 handle_cast(polling, State) ->
     %% Close any open transport...s
-    {noreply, State#page_state{engine=polling}};
+    ?DEBUG({polling, State#page_state.page_id}),
+    PollingState = State#page_state{engine=polling},
+    {noreply, PollingState};
 
 handle_cast({attach, push_pid, PushPid}, #page_state{engine=polling, push_pid=undefined}=State) ->
     State1 = when_process_is_alive(PushPid, fun() ->
+        ?DEBUG({attach_push_pid, PushPid, State#page_state.page_id}),
         erlang:monitor(process, PushPid),
         PushState = State#page_state{push_pid=PushPid},
         %% TODO: flush existing messages.
-        z_session:keepalive(PushState#page_state.session_pid)
+        z_session:keepalive(PushState#page_state.session_pid),
+        PushState
     end, State),
-    {no_reply, State1};
+    {noreply, State1};
+
+handle_cast({detach, push_pid}, State) ->
+    StateNoPush = State#page_state{push_pid=undefined, last_detach=z_utils:now()},
+    {noreply, StateNoPush};
+
 handle_cast({attach, post_pid, PostPid}, #page_state{engine=polling, post_pid=undefined}=State) ->
     %% Attach the post process, and use it to quickly post and leave the push connection open.
     State1 = when_process_is_alive(PostPid, fun() ->
+        ?DEBUG({attach_post_pid, PostPid, State#page_state.page_id}),
         erlang:monitor(process, PostPid),
         PostState = State#page_state{post_pid=PostPid},
-        z_session:keepalive(PostState#page_state.session_pid)
+        z_session:keepalive(PostState#page_state.session_pid),
+        PostState
     end, State),
-    {no_reply, State1};
+    {noreply, State1};
+handle_cast({detach, post_pid}, State) ->
+    StateNoPost = State#page_state{post_pid=undefined, last_detach=z_utils:now()},
+    {noreply, StateNoPost};
+
 handle_cast({attach, ws_pid, WsPid}, #page_state{engine=polling, ws_pid=undefined}=State) ->
     State1 = when_process_is_alive(WsPid, fun() ->
+        ?DEBUG({attach_ws_pid, WsPid, State#page_state.page_id}),
         erlang:monitor(process, WsPid),
         WsState = State#page_state{ws_pid=WsPid},
-        z_session:keepalive(WsState#page_state.session_pid)
+        z_session:keepalive(WsState#page_state.session_pid),
+        WsState
     end, State),
-    {no_reply, State1};
-handle_cast({attach, _,_}, State) ->
-    % ignore
-    {no_reply, State};
+    {noreply, State1};
+handle_cast({detach, ws_pid}, State) ->
+    StateNoWs = State#page_state{ws_pid=undefined, last_detach=z_utils:now()},
+    {noreply, StateNoWs};
+
+
+handle_cast({attach, What,Pid}, State) ->
+    ?DEBUG({ignore_attach, What, Pid, State#page_state.page_id, State#page_state.engine, State#page_state.post_pid}),
+    {noreply, State};
 
 handle_cast(upgrade, #page_state{engine=polling, push_pid=PushPid, ws_pid=WsPid}=State) when is_pid(WsPid) ->
+    ?DEBUG({session_page_upgrade, State#page_state.page_id, State#page_state.page_id}),
     when_process_is_alive(PushPid, fun() ->
+        ?DEBUG(sending_close),
         PushPid ! close 
     end, undefined),
+    ?DEBUG(we_are_upgraded),
     {noreply, State#page_state{engine=websocket}};
 
 handle_cast({add_script, Script}, State) ->
@@ -474,6 +500,7 @@ handle_info(_, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @doc Terminate all processes coupled to the page.
 terminate(_Reason, State) ->
+    ?DEBUG({terminate, State#page_state.page_id, self()}),
     lists:foreach(fun(Pid) -> exit(Pid, 'EXIT') end, State#page_state.linked),
     ok.
 
