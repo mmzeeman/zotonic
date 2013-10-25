@@ -509,6 +509,10 @@ function z_stream_start(options)
     else
         z_use_websockets = false;
 
+    // Ad-hoc fix to prevent connection problems.
+    if(z_ua == "desktop")
+        z_use_websockets = false;
+
     if (options.wss || window.location.protocol == "https:")
         z_websocket_protocol = "wss:";
     else
