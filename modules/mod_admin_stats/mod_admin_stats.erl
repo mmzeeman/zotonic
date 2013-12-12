@@ -49,6 +49,5 @@ observe_postback_notify(#postback_notify{ message="update_metrics" }, Context) -
       io_lib:format("z_event('new_metrics', ~s);", [z_convert:to_flatlist(Output)]),
       Context1),
     Context1;
-observe_postback_notify(Args, _Context) ->
-    ?DEBUG(Args),
+observe_postback_notify(_Args, _Context) ->
     undefined.
