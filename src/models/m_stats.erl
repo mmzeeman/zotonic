@@ -69,8 +69,8 @@ get_metrics(#context{ host=Host }) ->
     [M#m{ value={key, Key} } || {H,_,_,_}=Key <- folsom_metrics:get_metrics(), H==Host].
 
 get_metric_type(Key) ->
-    [{Key, [{type, Type}]}] = folsom_metrics:get_metric_info(Key),
-    Type.
+    [{Key, Props}] = folsom_metrics:get_metric_info(Key),
+    proplists:get_value(type, Props).
 
 get_metric_value(Key, histogram) ->
     folsom_metrics:get_histogram_statistics(Key);
