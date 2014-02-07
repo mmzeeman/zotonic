@@ -129,15 +129,28 @@ get_metric_value(Stat, From) ->
 %% Some helper functions
 
 update_metric(#counter{op=incr, value=Value}=Stat, From) ->
-    folsom_metrics:notify(key(Stat, From), {inc, Value});
+    safely_notify(key(Stat, From), {inc, Value});
 update_metric(#counter{op=decr, value=Value}=Stat, From) ->
-    folsom_metrics:notify(key(Stat, From), {dec, Value});
+    safely_notify(key(Stat, From), {dec, Value});
 update_metric(#counter{op=clear}=Stat, From) ->
-    folsom_metrics:notify(key(Stat, From), clear);
+    safely_notify(key(Stat, From), clear);
 update_metric(#meter{op=incr, value=Value}=Stat, From) ->
-    folsom_metrics:notify(key(Stat, From), Value);
+    safely_notify(key(Stat, From), Value);
 update_metric(#histogram{value=Value}=Stat, From) ->
-    folsom_metrics:notify({key(Stat, From), Value}).
+    safely_notify({key(Stat, From), Value}).
+
+
+safely_notify(Event) ->
+    case folsom_metrics:safely_notify(Event) of
+        ok -> ok;
+        SomethingElse -> ?DEBUG(SomethingElse)
+    end.
+safely_notify(Name, Event) ->
+    case folsom_metrics:safely_notify(Name,Event) of
+        ok -> ok;
+        SomethingElse -> ?DEBUG(SomethingElse)
+    end.
+
 
 key(#counter{name=Name}, #stats_from{host=Host, system=System, rsc_id=Id}) ->
     {Host, System, Id, Name};  
