@@ -143,12 +143,12 @@ update_metric(#histogram{value=Value}=Stat, From) ->
 safely_notify(Event) ->
     case folsom_metrics:safely_notify(Event) of
         ok -> ok;
-        SomethingElse -> ?DEBUG(SomethingElse)
+        SomethingElse -> ?DEBUG({stats_error, Event, SomethingElse})
     end.
 safely_notify(Name, Event) ->
-    case folsom_metrics:safely_notify(Name,Event) of
+    case folsom_metrics:safely_notify(Name, Event) of
         ok -> ok;
-        SomethingElse -> ?DEBUG(SomethingElse)
+        SomethingElse -> ?DEBUG({stats_error, Name, Event, SomethingElse})
     end.
 
 
