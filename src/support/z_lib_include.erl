@@ -81,9 +81,9 @@ url_for_args(Files, JoinedPath, Extension, Args, Context) ->
         false -> [];
         true -> [use_absolute_url]
     end,
-    Modified = newest(Files, {{1970,1,1},{12,0,0}}, Context),
+    Checksum = checksum(Files, Context),
     [$/|Path] = JoinedPath,
-    [{star, [Path, ?SEP, integer_to_list(Modified), Extension]} | Args1].
+    [{star, [Path, ?SEP, integer_to_list(Checksum), Extension]} | Args1].
 
 %% @doc Make the collapsed paths for the js and the css files.
 collapsed_paths(Files) ->
@@ -96,37 +96,50 @@ collapsed_paths(Files) ->
     
 
 %% @doc Given the filepath of the request, return all files collapsed in the path.
-%% @spec uncollapse(string()) -> list()
-uncollapse(Path) ->
-    Parts = string:tokens(Path, [?SEP]),
-    case uncollapse_dirs(Parts) of
-        [] -> 
-            [];
-        [File] ->
-            [File];
-        [TimestampExt | Files] ->
-            Extension = filename:extension(TimestampExt),
-            lists:foldl(fun(F, Acc) -> [F++Extension|Acc] end, [], Files)
-    end.
+%% @spec uncollapse(string()|binary()) -> list()
+uncollapse(Path) when is_binary(Path) ->
+    add_extension(uncollapse_dirs(binary:split(Path, <<?SEP>>, [global])));
+uncollapse(Path) when is_list(Path) ->
+    add_extension(uncollapse_dirs(string:tokens(Path, [?SEP]))).
+
+add_extension([]) ->
+    [];
+add_extension([File]) ->
+    [File];
+add_extension([TimestampExt | Files]) ->
+    Extension = filename:extension(TimestampExt),
+    lists:foldl(fun(F, Acc) -> [add_extension_1(F,Extension)|Acc] end, [], Files).
     
+add_extension_1(F, Ext) when is_binary(F) ->
+    Ext1 = z_convert:to_binary(Ext),
+    <<F/binary, Ext1/binary>>;
+add_extension_1(F, Ext) when is_list(F) ->
+    F ++ Ext.
 
-    uncollapse_dirs([]) ->
-        [];
-    uncollapse_dirs([File|Rest]) ->
-        case filename:dirname(File) of
-            [X] when X =:= $. orelse X =:= $/ ->
-                uncollapse_dirs(Rest, [], [File]);
-            N ->
-                uncollapse_dirs(Rest, N, [File])
-        end.
+uncollapse_dirs([]) ->
+    [];
+uncollapse_dirs([File|Rest]) ->
+    case filename:dirname(File) of
+        [X] when X =:= $. orelse X =:= $/ ->
+            uncollapse_dirs(Rest, [], [File]);
+        <<X>> when X =:= $. orelse X =:= $/ ->
+            uncollapse_dirs(Rest, [], [File]);
+        N ->
+            uncollapse_dirs(Rest, N, [File])
+    end.
 
-        uncollapse_dirs([], _Dirname, Acc) ->
-            Acc;
-        uncollapse_dirs([[$/|_]=File|Rest], _Dirname, Acc) ->
-            uncollapse_dirs(Rest, filename:dirname(File), [File|Acc]);
-        uncollapse_dirs([File|Rest], Dirname, Acc) ->
-            File1 = Dirname ++ [$/ | File],
-            uncollapse_dirs(Rest, filename:dirname(File1), [File1|Acc]).
+uncollapse_dirs([], _Dirname, Acc) ->
+    Acc;
+uncollapse_dirs([[$/|_]=File|Rest], _Dirname, Acc) ->
+    uncollapse_dirs(Rest, filename:dirname(File), [File|Acc]);
+uncollapse_dirs([<<$/,_/binary>>=File|Rest], _Dirname, Acc) ->
+    uncollapse_dirs(Rest, filename:dirname(File), [File|Acc]);
+uncollapse_dirs([File|Rest], Dirname, Acc) when is_list(File) ->
+    File1 = Dirname ++ [$/ | File],
+    uncollapse_dirs(Rest, filename:dirname(File1), [File1|Acc]);
+uncollapse_dirs([File|Rest], Dirname, Acc) when is_binary(File) ->
+    File1 = <<Dirname/binary, $/, File/binary>>,
+    uncollapse_dirs(Rest, filename:dirname(File1), [File1|Acc]).
 
 
 %% @doc Try to remove directory names that are the same as the directory of the previous file in the list.
@@ -169,24 +182,34 @@ collapse_dirs([File|Files]) ->
         [$/ | File].
 
 
-%% @doc Get the newest mod time of the list of files.
-newest([], Mod, _Context) ->
-	[ModUTC|_] = calendar:local_time_to_universal_time_dst(Mod),
-    calendar:datetime_to_gregorian_seconds(ModUTC);
-newest([File|Files], Mod, Context) ->
+%% @doc Calculate a checksum of the mod times of the list of files.
+checksum(Files, Context) ->
+    checksum(Files, {0, 0}, Context).
+
+checksum([], State, _Context) ->
+    fletcher_final(State);
+checksum([File|Files], State, Context) ->
     case z_module_indexer:find(lib, File, Context) of
         {ok, #module_index{filepath=FilePath}} ->
-            FileMod = filelib:last_modified(FilePath),
-            case FileMod > Mod of
-                true -> newest(Files, FileMod, Context);
-                false -> newest(Files, Mod, Context)
-            end;
+	    State1 = dt_checksum(filelib:last_modified(FilePath), State),
+	    checksum(Files, State1, Context);
         {error, enoent} ->
             %% Not found, skip the file
             ?zWarning("lib file not found: ~s", [File], Context),
-            newest(Files, Mod, Context)
+            checksum(Files, State, Context)
     end.
 
+dt_checksum({{Year, Month, Day}, {Hour, Minute, Second}}, State) ->
+    fletcher_sum(Year, fletcher_sum(Month, fletcher_sum(Day, 
+        fletcher_sum(Hour, fletcher_sum(Minute, fletcher_sum(Second, State)))))).
+
+%% Calculation of Fletcher32 checksum
+fletcher_final({Sum1, Sum2}) ->
+    (Sum2 bsl 16) bor Sum1.
+
+fletcher_sum(Val, {Sum1, Sum2}) ->
+    Sum1_1 = (Sum1 + Val) rem 16#FFFF,
+    {Sum1_1, (Sum2 + Sum1_1) rem 16#FFFF}.
 
 %% @doc Split the list of files in js and css files, remove leading '/'
 split_css_js(Files) ->
