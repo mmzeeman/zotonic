@@ -48,7 +48,7 @@ malformed_request(ReqData, _Context) ->
 forbidden(ReqData, Context) ->
     Context1 = ?WM_REQ(ReqData, Context),
     Context2 = z_context:continue_session(Context1),
-    ?WM_REPLY(not z_context:has_session(Context2)).
+    ?WM_REPLY(not z_context:has_session(Context2), Context2).
 
 allowed_methods(ReqData, Context) ->
     {['POST'], ReqData, Context}.
