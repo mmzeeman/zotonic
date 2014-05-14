@@ -46,10 +46,9 @@ malformed_request(ReqData, _Context) ->
     ?WM_REPLY(false, Context).
 
 forbidden(ReqData, Context) ->
-    %% TODO: prevent that we make a new ua session or a new page session, fail when a new session is needed
     Context1 = ?WM_REQ(ReqData, Context),
-    Context2 = z_context:ensure_all(Context1),
-    ?WM_REPLY(false, Context2).
+    Context2 = z_context:continue_session(Context1),
+    ?WM_REPLY(not z_context:has_session(Context2)).
 
 allowed_methods(ReqData, Context) ->
     {['POST'], ReqData, Context}.
@@ -62,10 +61,11 @@ content_types_provided(ReqData, Context) ->
 %% @doc Collect all scripts to be pushed back to the user agent
 process_post(ReqData, Context) ->
     Context1 = ?WM_REQ(ReqData, Context),
-    MRef = erlang:monitor(process, Context1#context.page_pid),
-    z_session_page:comet_attach(self(), Context1#context.page_pid),
+    Context2 = z_context:ensure_all(Context1),
+    MRef = erlang:monitor(process, Context2#context.page_pid),
+    z_session_page:comet_attach(self(), Context2#context.page_pid),
     TRef = start_timer(?COMET_FLUSH_EMPTY),
-    process_post_loop(Context1, TRef, MRef, false).
+    process_post_loop(Context2, TRef, MRef, false).
 
 
 %% @doc Wait for all scripts to be pushed to the user agent.
