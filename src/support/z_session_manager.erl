@@ -429,20 +429,17 @@ get_session_cookie(Context) ->
     case z_context:get_cookie(?SESSION_COOKIE, Context) of
         undefined ->
             % Check the z_sid query args
-            ReqData = z_context:get_reqdata(Context),
-            case wrq:get_qs_value("z_sid", ReqData) of
+            case z_context:get_q(z_sid, Context) of
                 undefined ->
-                    case dict:find(z_sid, wrq:path_info(ReqData)) of
-                        {ok, SessionId} -> SessionId;
-                        error -> undefined
+                    case z_context:get(z_sid, Context) of
+                        undefined -> undefined;
+                        SessionId -> SessionId
                     end;
-                SessionId ->
-                    SessionId
+                SessionId -> SessionId
             end;
         SessionId ->
             SessionId
     end.
-
 
 %% @doc Save the session id in a cookie on the user agent
 -spec set_session_cookie( string(), #context{} ) -> #context{}.

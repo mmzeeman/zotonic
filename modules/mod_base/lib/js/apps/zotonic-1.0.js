@@ -31,6 +31,7 @@ var z_use_websockets        = "WebSocket" in window;
 var z_websocket_host        = undefined;
 var z_websocket_protocol    = undefined;
 var z_comet_is_running		= false;
+var z_comet_reconnect_timeout = 1000;
 var z_doing_postback		= false;
 var z_spinner_show_ct		= 0;
 var z_postbacks				= [];
@@ -266,7 +267,7 @@ function z_do_postback(triggerID, postback, extraParams)
     var params =
         "postback=" + urlencode(postback) +
         "&z_trigger_id=" + urlencode(triggerID) +
-        "&z_pageid=" + urlencode(z_pageid) +
+        "&" + stream_args() +
         "&" + $.param(extraParams);
 
     // logon_form and .setcookie forms are always posted, as they will set cookies.
@@ -535,7 +536,7 @@ function z_stream_start(options)
         }
         else
         {
-            setTimeout(function() { z_comet(z_stream_host); }, 2000);
+            setTimeout(function() { z_comet(z_stream_host); }, 100);
             z_comet_is_running = true;
         }
     }
@@ -545,7 +546,7 @@ function z_comet(host)
 {
     if (host != window.location.host && window.location.protocol == "http:")
     {
-        var url = window.location.protocol + '//' + host + "/comet/subdomain?z_pageid=" + urlencode(z_pageid);
+        var url = window.location.protocol + '//' + host + "/comet/subdomain?" + stream_args();
         var comet = $('<iframe id="z_comet_connection" name="z_comet_connection" src="'+url+'" />');
         comet.css({ position: 'absolute', top: '-1000px', left: '-1000px' });
         comet.appendTo("body");
@@ -561,20 +562,40 @@ function z_comet_host()
     $.ajax({
         url: window.location.protocol + '//' + window.location.host + '/comet',
         type:'post',
-        data: "z_pageid=" + urlencode(z_pageid),
+        data: stream_args(),
         dataType: 'text',
-        success: function(data, textStatus)
-        {
-            z_comet_data(data);
-            setTimeout(function() { z_comet_host(); }, 1000);
+        statusCode: {
+            403: function() {
+                // If the page-session or session is gone, just reload the page.
+                window.location.reload();
+            },
+            204: function(data, textStatus) {
+                z_comet_data(data);
+                z_timeout_comet_host(1000);
+            },
+            200: function(data, textData) {
+                z_comet_data(data);
+                z_timeout_comet_host(100);
+            }
         },
         error: function(xmlHttpRequest, textStatus, errorThrown)
         {
-            setTimeout(function() { z_comet_host(); }, 1000);
+            setTimeout(function() {
+                z_comet_host();
+            }, z_comet_reconnect_timeout);
+
+            if(z_comet_reconnect_timeout < 60000)
+                z_comet_reconnect_timeout = z_comet_reconnect_timeout * 2;
         }
     });
 }
 
+function z_timeout_comet_host(timeout) {
+    setTimeout(function() {
+       z_comet_reconnect_timeout = 1000;
+       z_comet_host();
+    }, timeout);
+}
 
 function z_comet_data(data)
 {
@@ -603,7 +624,7 @@ function z_websocket_restart()
 function z_websocket_start(host)
 {
     var protocol = z_websocket_protocol;
-    z_ws = new WebSocket(protocol+"//"+z_websocket_host+"/websocket?z_pageid="+z_pageid+"&z_ua="+z_ua);
+    z_ws = new WebSocket(protocol+"//"+z_websocket_host+"/websocket?" + stream_args("websocket"));
 
     var connect_timeout = setTimeout(function() { 
         if(z_ws && z_ws.readyState != 0) return;
@@ -645,6 +666,18 @@ function z_websocket_start(host)
         z_comet_data(evt.data);
         setTimeout("z_postback_check()", 0);
     };
+}
+
+function stream_args(stream_type) {
+    var args = "z_pageid=" + urlencode(z_pageid);
+
+    if(window.z_sid)
+        args += "&z_sid=" + urlencode(z_sid);
+
+    if(stream_type == "websocket")
+        args += "&z_ua=" + urlencode(z_ua);
+
+    return args;
 }
 
 

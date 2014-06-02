@@ -154,6 +154,8 @@ add_script(Context) ->
 
 
 %% @doc Spawn a new process, linked to the page pid
+spawn_link(_Module, _Func, _Args, #context{page_pid=undefined}=Context) ->
+    {error, {no_page_session, Context#context.page_id, Context#context.page_id}};
 spawn_link(Module, Func, Args, Context) ->
     gen_server:call(Context#context.page_pid, {spawn_link, Module, Func, Args}).
 
