@@ -219,19 +219,9 @@ init_webmachine() ->
         end,
     application:set_env(webzmachine, server_header, webmachine_request:server_header() ++ " Zotonic/" ++ ?ZOTONIC_VERSION),
     application:set_env(webzmachine, error_handler, ErrorHandler),        
-        
-    LogDir = z_config:get_dirty(log_dir),
-    application:set_env(webzmachine, log_dir, LogDir), 
     application:set_env(webzmachine, webmachine_logger_module, z_stats),
-    webmachine_sup:start_logger(webmachine_logger),
-    
-    case z_config:get_dirty(enable_perf_logger) of
-        true ->
-            application:set_env(webzmachine, enable_perf_logger, true),
-            webmachine_sup:start_perf_logger(LogDir);
-        _ ->
-            ignore
-    end.
+        
+    z_access_logger:start().
 
 
 %% @todo Exclude platforms that do not support raw ipv6 socket options

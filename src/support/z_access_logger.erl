@@ -61,7 +61,8 @@ combined(LogData) ->
         $", webmachine_util:fmt_method(method(LogData)), 32, path(LogData), 32, format_version(version(LogData)), $", 32,
         integer_to_list(response_code(LogData)), 32, response_length(LogData), 32,
         $", referrer(LogData), $", 32,
-        $", user_agent(LogData), $"
+        $", user_agent(LogData), $",
+        $\n
     ].
 
 combined_vhost(LogData) ->
@@ -70,7 +71,8 @@ combined_vhost(LogData) ->
         integer_to_list(response_code(LogData)), 32, response_length(LogData), 32,
         $", referrer(LogData), $", 32,
         $", user_agent(LogData), $", 32,
-        vhost(LogData)
+        vhost(LogData),
+        $\n
     ].
 
 

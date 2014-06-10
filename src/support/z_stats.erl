@@ -94,24 +94,22 @@ log_access(#wm_log_data{finish_time=undefined}=LogData) ->
     log_access(LogData#wm_log_data{finish_time=os:timestamp()});
 log_access(#wm_log_data{start_time=StartTime, finish_time=FinishTime, 
                         response_length=ResponseLength}=LogData) when StartTime =/= undefined ->
+    ReqDuration = timer:now_diff(FinishTime, StartTime),
     try 
-        Duration = #histogram{name=duration, value=timer:now_diff(FinishTime, StartTime)},
+        Duration = #histogram{name=duration, value=ReqDuration},
         Out = #meter{name=out, value=ResponseLength},
         System = #stats_from{system=webzmachine},
-
-        %% The request has already been counted by z_sites_dispatcher.
-        For = case webmachine_logger:get_metadata(zotonic_host, LogData) of
+        For = case z_access_logger:host(LogData) of
             undefined -> 
                 System;
-            Host -> 
+            Host ->
                 [System, System#stats_from{host=Host}]
         end,
 
         update(Duration, For),
         update(Out, For)
     after 
-        % Pass it to the default webmachine logger.
-        webmachine_logger:log_access(LogData)
+        z_access_logger:log(LogData)
     end.
 
 %% @doc Return the value of the metric.
@@ -127,6 +125,7 @@ get_metric_value(Stat, From) ->
 
 
 %% Some helper functions
+
 
 update_metric(#counter{op=incr, value=Value}=Stat, From) ->
     safely_notify(key(Stat, From), {inc, Value});

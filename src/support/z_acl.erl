@@ -287,10 +287,14 @@ set_anonymous(Context) ->
 %% @doc Log the user with the id on, fill the acl field of the context
 %% @spec logon(integer(), #context{}) -> #context{}
 logon(Id, Context) ->
-    case z_notifier:first(#acl_logon{id=Id}, Context) of
+    ContextLogin = case z_notifier:first(#acl_logon{id=Id}, Context) of
         undefined -> Context#context{acl=undefined, user_id=Id};
         #context{} = NewContext -> NewContext
-    end.
+    end,
+
+    {ok, Rd1} = webmachine_request:set_metadata(zotonic_user_id, ContextLogin#context.user_id, 
+        z_context:get_reqdata(ContextLogin)),
+    z_context:set_reqdata(Rd1, ContextLogin).
 
 
 %% @doc Log off, reset the acl field of the context
