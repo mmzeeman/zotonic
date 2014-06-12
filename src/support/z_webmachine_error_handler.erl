@@ -86,13 +86,20 @@ show_template(ReqData, Code, ErrorDump, Reason) ->
                             {error_dump, X}
                         ]
                end,
-        Html = z_template:render("error.tpl", Vars, Context),
+        Dispatch = zotonic_dispatch(RD3),
+        Vars1 = Vars ++ [{zotonic_dispatch, Dispatch}],
+        Html = z_template:render("error.tpl", Vars1, Context),
         {Output, _} = z_context:output(Html, Context),
         {Output, RD3}
     catch
         _:_Reason -> {<<>>,RD3}
     end.
 
+zotonic_dispatch(ReqData) ->
+    case dict:find(zotonic_dispatch, wrq:path_info(ReqData)) of
+        {ok, Dispatch} -> Dispatch;
+        error -> undefined
+    end.
 
 bt_simplify({_E1, {_E2, Reason, BT}}) when is_list(BT) ->
     {reason, Reason, bt_table(BT)};
