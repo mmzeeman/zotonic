@@ -293,15 +293,15 @@ exif_orientation(InFile) ->
             1;
         [Line|_] -> 
             FirstLine = z_string:to_lower(Line),
-            case [z_string:trim(X) || X <- string:tokens(FirstLine, "-")] of
-                ["top", "left"] -> 1;
-                ["top", "right"] -> 2;
-                ["bottom", "right"] -> 3;
-                ["bottom", "left"] -> 4;
-                ["left", "top"] -> 5;
-                ["right", "top"] -> 6;
-                ["right", "bottom"] -> 7;
-                ["left", "bottom"] -> 8;
+            case [z_string:trim(X) || X <- binary:split(FirstLine, <<"-">>)] of
+                [<<"top">>, <<"left">>] -> 1;
+                [<<"top">>, <<"right">>] -> 2;
+                [<<"bottom">>, <<"right">>] -> 3;
+                [<<"bottom">>, <<"left">>] -> 4;
+                [<<"left">>, <<"top">>] -> 5;
+                [<<"right">>, <<"top">>] -> 6;
+                [<<"right">>, <<"bottom">>] -> 7;
+                [<<"left">>, <<"bottom">>] -> 8;
                 _ -> 1
             end
     end.

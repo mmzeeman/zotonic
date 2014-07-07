@@ -56,7 +56,7 @@ else
 
     # Only build zotonic the first time, not for restarts
     echo  "Starting Zotonic $NODENAME@$NODEHOST" 
-    ${MAKE} >/dev/null
+    # ${MAKE} >/dev/null
 fi
 
 ENV=`which env`
